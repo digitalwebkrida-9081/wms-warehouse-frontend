@@ -19,7 +19,6 @@ import {
 } from "lucide-react";
 
 const navItems = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Party Master", href: "/party", icon: Users },
   { name: "Product Master", href: "/product", icon: Package },
   { name: "Category Master", href: "/category", icon: Layers },
@@ -42,34 +41,11 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto py-4 px-3 custom-scrollbar">
-        <div className="px-3 mb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-          Main Menu
-        </div>
-        {/* {navItems.slice(0, 1).map((item) => {
-          const isActive = pathname === item.href;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 group ${
-                isActive
-                  ? "bg-blue-600 text-white shadow-lg shadow-blue-900/40"
-                  : "text-slate-400 hover:bg-slate-800 hover:text-white"
-              }`}
-            >
-              <div className="flex items-center">
-                <item.icon className={`h-5 w-5 mr-3 ${isActive ? "text-white" : "text-slate-400 group-hover:text-blue-400"}`} />
-                <span className="font-medium">{item.name}</span>
-              </div>
-              {isActive && <ChevronRight className="h-4 w-4" />}
-            </Link>
-          );
-        })} */}
 
         <div className="px-3 mt-6 mb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
           Inventory & Masters
         </div>
-        {navItems.slice(1, 5).map((item) => {
+        {navItems.slice(0, 4).map((item) => {
           const isActive = pathname === item.href;
           return (
             <Link
@@ -93,7 +69,7 @@ export default function Sidebar() {
         <div className="px-3 mt-6 mb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
           Warehouse Operations
         </div>
-        {navItems.slice(5).map((item) => {
+        {navItems.slice(4).map((item) => {
           const isActive = pathname === item.href;
           return (
             <Link
