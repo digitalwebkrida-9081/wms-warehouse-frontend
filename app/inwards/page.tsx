@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Search, MoreVertical, Edit2, Trash2, ArrowRightCircle, FileText, CheckCircle2, ChevronLeft, ChevronRight, Download, X, Calculator, Printer, FileDown } from 'lucide-react';
 import { Inward } from '@/app/lib/db';
+import { authFetch } from '@/app/lib/auth-fetch';
 
 export default function InwardsPage({
   params,
@@ -38,7 +39,7 @@ export default function InwardsPage({
 
   const fetchParties = useCallback(async () => {
     try {
-      const res = await fetch(`/api/party?pageSize=100`);
+      const res = await authFetch(`/api/party?pageSize=100`);
       const data = await res.json();
       if (data.data) {
         setParties(data.data.map((p: any) => p.name));
@@ -51,7 +52,7 @@ export default function InwardsPage({
   const fetchInwards = useCallback(async () => {
 
     try {
-      const res = await fetch(`/api/inwards?page=${page}&pageSize=${pageSize}&search=${encodeURIComponent(search)}`);
+      const res = await authFetch(`/api/inwards?page=${page}&pageSize=${pageSize}&search=${encodeURIComponent(search)}`);
       const data = await res.json();
       setInwards(data.data);
       setTotal(data.total);
@@ -120,7 +121,7 @@ export default function InwardsPage({
     const method = editingInward ? 'PUT' : 'POST';
     
     try {
-      const res = await fetch(url, {
+      const res = await authFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
@@ -137,7 +138,7 @@ export default function InwardsPage({
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this inward?')) return;
     try {
-      await fetch(`/api/inwards/${id}`, { method: 'DELETE' });
+      await authFetch(`/api/inwards/${id}`, { method: 'DELETE' });
       fetchInwards();
       const newSelected = new Set(selectedIds);
       newSelected.delete(id);
@@ -154,7 +155,7 @@ export default function InwardsPage({
 
   const confirmGenerateBill = async () => {
     try {
-      const res = await fetch('/api/billing/generate-from-inwards', {
+      const res = await authFetch('/api/billing/generate-from-inwards', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

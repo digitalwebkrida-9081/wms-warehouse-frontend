@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Search, MoreVertical, Edit2, Trash2, ChevronLeft, ChevronRight, User } from 'lucide-react';
 import { Party } from '@/app/lib/db';
+import { authFetch } from '@/app/lib/auth-fetch';
 
 export default function PartyPage() {
   const [parties, setParties] = useState<Party[]>([]);
@@ -24,7 +25,7 @@ export default function PartyPage() {
 
   const fetchParties = useCallback(async () => {
     try {
-      const res = await fetch(`/api/party?page=${page}&pageSize=${pageSize}&search=${encodeURIComponent(search)}`);
+      const res = await authFetch(`/api/party?page=${page}&pageSize=${pageSize}&search=${encodeURIComponent(search)}`);
       const data = await res.json();
       setParties(data.data);
       setTotal(data.total);
@@ -98,7 +99,7 @@ export default function PartyPage() {
     const method = editingParty ? 'PUT' : 'POST';
     
     try {
-      const res = await fetch(url, {
+      const res = await authFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
@@ -115,7 +116,7 @@ export default function PartyPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this party?')) return;
     try {
-      await fetch(`/api/party/${id}`, { method: 'DELETE' });
+      await authFetch(`/api/party/${id}`, { method: 'DELETE' });
       fetchParties();
       const newSelected = new Set(selectedIds);
       newSelected.delete(id);
