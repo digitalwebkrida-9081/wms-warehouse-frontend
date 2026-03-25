@@ -26,9 +26,13 @@ export default function PartyPage() {
   const fetchParties = useCallback(async () => {
     try {
       const res = await authFetch(`/api/party?page=${page}&pageSize=${pageSize}&search=${encodeURIComponent(search)}`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Server returned ${res.status}: ${text.slice(0, 100)}`);
+      }
       const data = await res.json();
-      setParties(data.data);
-      setTotal(data.total);
+      setParties(data.data || []);
+      setTotal(data.total || 0);
     } catch (error) {
       console.error('Failed to fetch parties:', error);
     }
@@ -107,22 +111,32 @@ export default function PartyPage() {
       if (res.ok) {
         closeModal();
         fetchParties();
+      } else {
+        const errorData = await res.json();
+        alert(`Failed to save party: ${errorData.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to save:', error);
+      alert('Network error while saving party.');
     }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this party?')) return;
     try {
-      await authFetch(`/api/party/${id}`, { method: 'DELETE' });
-      fetchParties();
-      const newSelected = new Set(selectedIds);
-      newSelected.delete(id);
-      setSelectedIds(newSelected);
+      const res = await authFetch(`/api/party/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchParties();
+        const newSelected = new Set(selectedIds);
+        newSelected.delete(id);
+        setSelectedIds(newSelected);
+      } else {
+        const errorData = await res.json();
+        alert(`Failed to delete party: ${errorData.message || 'Unknown error'}`);
+      }
     } catch (error) {
       console.error('Failed to delete:', error);
+      alert('Network error while deleting party.');
     }
   };
 

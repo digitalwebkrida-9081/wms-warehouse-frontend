@@ -52,13 +52,14 @@ export default function UserManagementPage() {
   const fetchUsers = useCallback(async () => {
     try {
       const res = await authFetch("/api/auth");
-      const data = await res.json();
-      if (res.ok) {
-        setUsers(data);
-      } else {
-        setError(data.message || "Failed to fetch users");
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Server returned ${res.status}: ${text.slice(0, 100)}`);
       }
+      const data = await res.json();
+      setUsers(data || []);
     } catch (err) {
+      console.error('Failed to fetch users:', err);
       setError("Network error fetching users");
     } finally {
       setLoading(false);
@@ -87,13 +88,13 @@ export default function UserManagementPage() {
         method: "POST",
         body: JSON.stringify(formData),
       });
-      const data = await res.json();
 
       if (res.ok) {
         setSuccess("User created successfully!");
         fetchUsers();
         setTimeout(() => setIsModalOpen(false), 1500);
       } else {
+        const data = await res.json();
         setError(data.message || "Failed to create user");
       }
     } catch (err) {
@@ -113,13 +114,13 @@ export default function UserManagementPage() {
 
     try {
       const res = await authFetch(`/api/auth/${id}`, { method: "DELETE" });
-      const data = await res.json();
 
       if (res.ok) {
         setSuccess("User deleted successfully!");
         fetchUsers();
         setTimeout(() => setSuccess(""), 3000);
       } else {
+        const data = await res.json();
         setError(data.message || "Failed to delete user");
       }
     } catch (err) {

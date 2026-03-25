@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Plus, Search, MoreVertical, Edit2, Trash2, ArrowRightCircle, FileText, CheckCircle2, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { Inward, Outward } from '@/app/lib/db';
+import { authFetch } from '@/app/lib/auth-fetch';
 
 export default function OutwardsPage({
   params,
@@ -44,10 +45,14 @@ function OutwardsContent() {
       if (inwardIdFilter) {
         url += `&inwardId=${inwardIdFilter}`;
       }
-      const res = await fetch(url);
+      const res = await authFetch(url);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Server returned ${res.status}: ${text.slice(0, 100)}`);
+      }
       const data = await res.json();
-      setOutwards(data.data);
-      setTotal(data.total);
+      setOutwards(data.data || []);
+      setTotal(data.total || 0);
     } catch (error) {
       console.error('Failed to fetch outwards:', error);
     }
@@ -55,10 +60,13 @@ function OutwardsContent() {
 
   const fetchInwards = useCallback(async () => {
     try {
-      // Fetch all inwards to populate the selection dropdown
-      const res = await fetch(`/api/inwards?pageSize=100`);
+      const res = await authFetch(`/api/inwards?pageSize=100`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Server returned ${res.status}: ${text.slice(0, 100)}`);
+      }
       const data = await res.json();
-      setInwards(data.data);
+      setInwards(data.data || []);
     } catch (error) {
       console.error('Failed to fetch inwards:', error);
     }
@@ -146,7 +154,7 @@ function OutwardsContent() {
         payload.inwardId = (payload.inwardId as any).id;
       }
 
-      const res = await fetch(url, {
+      const res = await authFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -154,40 +162,54 @@ function OutwardsContent() {
       if (res.ok) {
         closeModal();
         fetchOutwards();
+      } else {
+        const errorData = await res.json();
+        alert(`Failed to save outward: ${errorData.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to save:', error);
+      alert('Network error while saving outward.');
     }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this outward entry?')) return;
     try {
-      await fetch(`/api/outward/${id}`, { method: 'DELETE' });
-      fetchOutwards();
-      const newSelected = new Set(selectedIds);
-      newSelected.delete(id);
-      setSelectedIds(newSelected);
+      const res = await authFetch(`/api/outward/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchOutwards();
+        const newSelected = new Set(selectedIds);
+        newSelected.delete(id);
+        setSelectedIds(newSelected);
+      } else {
+        const errorData = await res.json();
+        alert(`Failed to delete outward: ${errorData.message || 'Unknown error'}`);
+      }
     } catch (error) {
       console.error('Failed to delete:', error);
+      alert('Network error while deleting outward.');
     }
   };
 
   const handleGenerateBill = async () => {
     if (selectedIds.size === 0) return;
     try {
-      const res = await fetch('/api/billing/generate-from-outward', {
+      const res = await authFetch('/api/billing/generate-from-outward', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ outwardIds: Array.from(selectedIds) }),
       });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.message || 'Failed to generate bill');
+      }
       const data = await res.json();
       alert(`Success! Generated Outward Bill ID: ${data.billId} with total weight ${data.totalWeight}kg`);
       setSelectedIds(new Set()); // clear selection
       fetchOutwards();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to generate bill:', error);
-      alert('Error generating bill');
+      alert(`Error generating bill: ${error.message}`);
     }
   };
 

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Search, MoreVertical, Edit2, Trash2, ChevronLeft, ChevronRight, Tags } from 'lucide-react';
 import { Category } from '@/app/lib/db';
+import { authFetch } from '@/app/lib/auth-fetch';
 
 export default function CategoryPage() {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -23,10 +24,14 @@ export default function CategoryPage() {
 
   const fetchCategories = useCallback(async () => {
     try {
-      const res = await fetch(`/api/category?page=${page}&pageSize=${pageSize}&search=${encodeURIComponent(search)}`);
+      const res = await authFetch(`/api/category?page=${page}&pageSize=${pageSize}&search=${encodeURIComponent(search)}`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Server returned ${res.status}: ${text.slice(0, 100)}`);
+      }
       const data = await res.json();
-      setCategories(data.data);
-      setTotal(data.total);
+      setCategories(data.data || []);
+      setTotal(data.total || 0);
     } catch (error) {
       console.error('Failed to fetch categories:', error);
     }
@@ -71,7 +76,7 @@ export default function CategoryPage() {
     const method = editingCategory ? 'PUT' : 'POST';
     
     try {
-      const res = await fetch(url, {
+      const res = await authFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
@@ -79,19 +84,29 @@ export default function CategoryPage() {
       if (res.ok) {
         closeModal();
         fetchCategories();
+      } else {
+        const errorData = await res.json();
+        alert(`Failed to save: ${errorData.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to save:', error);
+      alert('Network error while saving category.');
     }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this category?')) return;
     try {
-      await fetch(`/api/category/${id}`, { method: 'DELETE' });
-      fetchCategories();
+      const res = await authFetch(`/api/category/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchCategories();
+      } else {
+        const errorData = await res.json();
+        alert(`Failed to delete: ${errorData.message || 'Unknown error'}`);
+      }
     } catch (error) {
       console.error('Failed to delete:', error);
+      alert('Network error while deleting category.');
     }
   };
 

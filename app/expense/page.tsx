@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Search, MoreVertical, Edit2, Trash2, Calendar, DollarSign, Tag, FileText, ChevronLeft, ChevronRight, Download, X, Paperclip, CreditCard } from 'lucide-react';
 import { Expense } from '@/app/lib/db';
+import { authFetch } from '@/app/lib/auth-fetch';
 
 export default function ExpensePage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -21,7 +22,11 @@ export default function ExpensePage() {
 
   const fetchExpenses = useCallback(async () => {
     try {
-      const res = await fetch(`/api/expenses?page=${page}&pageSize=${pageSize}&search=${encodeURIComponent(search)}`);
+      const res = await authFetch(`/api/expenses?page=${page}&pageSize=${pageSize}&search=${encodeURIComponent(search)}`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Server returned ${res.status}: ${text.slice(0, 100)}`);
+      }
       const data = await res.json();
       setExpenses(data.data || []);
       setTotal(data.total || 0);
@@ -61,7 +66,7 @@ export default function ExpensePage() {
     const method = editingExpense ? 'PUT' : 'POST';
     
     try {
-      const res = await fetch(url, {
+      const res = await authFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
@@ -69,19 +74,29 @@ export default function ExpensePage() {
       if (res.ok) {
         closeModal();
         fetchExpenses();
+      } else {
+        const errorData = await res.json();
+        alert(`Failed to save: ${errorData.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to save expense:', error);
+      alert('Network error while saving expense.');
     }
   };
 
   const handleDeleteExpense = async (id: string) => {
     if (!confirm('Are you sure you want to delete this expense?')) return;
     try {
-      await fetch(`/api/expenses/${id}`, { method: 'DELETE' });
-      fetchExpenses();
+      const res = await authFetch(`/api/expenses/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchExpenses();
+      } else {
+        const errorData = await res.json();
+        alert(`Failed to delete: ${errorData.message || 'Unknown error'}`);
+      }
     } catch (error) {
       console.error('Failed to delete expense:', error);
+      alert('Network error while deleting expense.');
     }
   };
 

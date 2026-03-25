@@ -15,7 +15,8 @@ export default function InwardsPage({
 }) {
   const router = useRouter();
   const [inwards, setInwards] = useState<Inward[]>([]);
-  const [parties, setParties] = useState<string[]>([]);
+  const [parties, setParties] = useState<{id: string, name: string}[]>([]);
+  const [products, setProducts] = useState<{id: string, name: string}[]>([]);
   const [total, setTotal] = useState(0);
 
   const [page, setPage] = useState(1);
@@ -40,12 +41,32 @@ export default function InwardsPage({
   const fetchParties = useCallback(async () => {
     try {
       const res = await authFetch(`/api/party?pageSize=100`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Server returned ${res.status}: ${text.slice(0, 100)}`);
+      }
       const data = await res.json();
       if (data.data) {
-        setParties(data.data.map((p: any) => p.name));
+        setParties(data.data.map((p: any) => ({ id: p.id, name: p.name })));
       }
     } catch (error) {
       console.error('Failed to fetch parties:', error);
+    }
+  }, []);
+
+  const fetchProducts = useCallback(async () => {
+    try {
+      const res = await authFetch(`/api/product?pageSize=1000`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Server returned ${res.status}: ${text.slice(0, 100)}`);
+      }
+      const data = await res.json();
+      if (data.data) {
+        setProducts(data.data.map((p: any) => ({ id: p.id, name: p.name })));
+      }
+    } catch (error) {
+      console.error('Failed to fetch products:', error);
     }
   }, []);
 
@@ -53,9 +74,13 @@ export default function InwardsPage({
 
     try {
       const res = await authFetch(`/api/inwards?page=${page}&pageSize=${pageSize}&search=${encodeURIComponent(search)}`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Server returned ${res.status}: ${text.slice(0, 100)}`);
+      }
       const data = await res.json();
-      setInwards(data.data);
-      setTotal(data.total);
+      setInwards(data.data || []);
+      setTotal(data.total || 0);
     } catch (error) {
       console.error('Failed to fetch inwards:', error);
     }
@@ -67,14 +92,14 @@ export default function InwardsPage({
 
   useEffect(() => {
     fetchParties();
-  }, [fetchParties]);
+    fetchProducts();
+  }, [fetchParties, fetchProducts]);
 
   // Debounce Search
   useEffect(() => {
     setPage(1); // Reset page on new search
   }, [search]);
 
-  const products = ['KESAR RAS GREEN DORI', 'ALPHONSO MANGO', 'FROZEN PEAS'];
 
   
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -129,22 +154,32 @@ export default function InwardsPage({
       if (res.ok) {
         closeModal();
         fetchInwards();
+      } else {
+        const errorData = await res.json();
+        alert(`Failed to save inward: ${errorData.message || errorData.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to save:', error);
+      alert('Network error while saving inward.');
     }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this inward?')) return;
     try {
-      await authFetch(`/api/inwards/${id}`, { method: 'DELETE' });
-      fetchInwards();
-      const newSelected = new Set(selectedIds);
-      newSelected.delete(id);
-      setSelectedIds(newSelected);
+      const res = await authFetch(`/api/inwards/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchInwards();
+        const newSelected = new Set(selectedIds);
+        newSelected.delete(id);
+        setSelectedIds(newSelected);
+      } else {
+        const errorData = await res.json();
+        alert(`Failed to delete inward: ${errorData.message || errorData.error || 'Unknown error'}`);
+      }
     } catch (error) {
       console.error('Failed to delete:', error);
+      alert('Network error while deleting inward.');
     }
   };
 
@@ -165,7 +200,10 @@ export default function InwardsPage({
         }),
       });
       
-      if (!res.ok) throw new Error('Failed to generate bill');
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.message || 'Failed to generate bill');
+      }
       
       const data = await res.json();
       setIsBillParamsModalOpen(false);
@@ -174,9 +212,9 @@ export default function InwardsPage({
       
       // Show Invoice Preview
       setInvoicePreviewData(data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to generate bill:', error);
-      alert('Error generating bill');
+      alert(`Error generating bill: ${error.message}`);
     }
   };
 
@@ -480,7 +518,7 @@ export default function InwardsPage({
                     className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm"
                   >
                     <option value="" disabled>Select Party</option>
-                    {parties.map(p => <option key={p} value={p}>{p}</option>)}
+                    {parties.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
                   </select>
                 </div>
 
@@ -493,7 +531,7 @@ export default function InwardsPage({
                     className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm"
                   >
                     <option value="" disabled>Select Product</option>
-                    {products.map(p => <option key={p} value={p}>{p}</option>)}
+                    {products.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
                   </select>
                 </div>
 

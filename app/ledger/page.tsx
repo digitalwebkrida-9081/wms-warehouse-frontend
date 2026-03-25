@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, Wallet, ArrowDownCircle, ArrowUpCircle, User, MapPin, Phone, Mail, FileText, ChevronDown } from 'lucide-react';
+import { authFetch } from '@/app/lib/auth-fetch';
 
 export default function LedgerPage() {
   const [selectedRoom, setSelectedRoom] = useState('');
@@ -14,11 +15,16 @@ export default function LedgerPage() {
     if (!room) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/ledger?room=${encodeURIComponent(room)}`);
+      const res = await authFetch(`/api/ledger?room=${encodeURIComponent(room)}`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Server returned ${res.status}: ${text.slice(0, 100)}`);
+      }
       const json = await res.json();
       setData(json);
     } catch (error) {
       console.error('Failed to fetch ledger:', error);
+      setData(null);
     } finally {
       setLoading(false);
     }

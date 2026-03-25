@@ -24,7 +24,7 @@ import {
   Printer,
   FileDown,
 } from "lucide-react";
-import { Bill } from "@/app/lib/db";
+import { Quotation } from "@/app/lib/db";
 import { authFetch } from "@/app/lib/auth-fetch";
 
 interface CompanySettings {
@@ -62,7 +62,7 @@ interface Inward {
   remarks: string;
   inwardNumber?: string;
 }
-export default function BillingPage() {
+export default function QuotationPage() {
   const router = useRouter();
   const [inwards, setInwards] = useState<Inward[]>([]);
   const [total, setTotal] = useState(0);
@@ -71,11 +71,11 @@ export default function BillingPage() {
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Bill Creation Screen State
-  const [isBillModalOpen, setIsBillModalOpen] = useState(false);
-  const [billPreview, setBillPreview] = useState<any>(null);
-  const [invoicePreviewData, setInvoicePreviewData] = useState<{
-    bill: any;
+  // Quotation Management State
+  const [isQuotationModalOpen, setIsQuotationModalOpen] = useState(false);
+  const [quotationPreview, setQuotationPreview] = useState<any>(null);
+  const [quotationPreviewData, setQuotationPreviewData] = useState<{
+    quotation: any;
     partyDetails: any;
   } | null>(null);
 
@@ -84,19 +84,19 @@ export default function BillingPage() {
   const [editingInward, setEditingInward] = useState<Inward | null>(null);
   const [formData, setFormData] = useState<Partial<Inward>>({});
   const [parties, setParties] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<"inwards" | "bills">("inwards");
+  const [activeTab, setActiveTab] = useState<"inwards" | "quotations">("inwards");
 
-  // Bill Data State
-  const [bills, setBills] = useState<Bill[]>([]);
-  const [billTotal, setBillTotal] = useState(0);
-  const [billPage, setBillPage] = useState(1);
-  const [billPageSize, setBillPageSize] = useState(10);
-  const [billSearch, setBillSearch] = useState("");
+  // Quotation Data State
+  const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [quotationTotal, setQuotationTotal] = useState(0);
+  const [quotationPage, setQuotationPage] = useState(1);
+  const [quotationPageSize, setQuotationPageSize] = useState(10);
+  const [quotationSearch, setQuotationSearch] = useState("");
 
-  // Bill Edit State
-  const [isEditBillModalOpen, setIsEditBillModalOpen] = useState(false);
-  const [editingBill, setEditingBill] = useState<Bill | null>(null);
-  const [billFormData, setBillFormData] = useState<Partial<Bill>>({});
+  // Quotation Edit State
+  const [isEditQuotationModalOpen, setIsEditQuotationModalOpen] = useState(false);
+  const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(null);
+  const [quotationFormData, setQuotationFormData] = useState<Partial<Quotation>>({});
 
   const products = ["KESAR RAS GREEN DORI", "ALPHONSO MANGO", "FROZEN PEAS"];
 
@@ -146,37 +146,38 @@ export default function BillingPage() {
       }
       const data = await res.json();
       if (data.data) {
-        setParties(data.data.map((p: any) => p.name));
+        const uniqueNames = Array.from(new Set(data.data.map((p: any) => p.name)));
+        setParties(uniqueNames as string[]);
       }
     } catch (error) {
       console.error("Failed to fetch parties:", error);
     }
   }, []);
 
-  const fetchBills = useCallback(async () => {
+  const fetchQuotations = useCallback(async () => {
     try {
       const res = await authFetch(
-        `/api/billing?page=${billPage}&pageSize=${billPageSize}&search=${encodeURIComponent(billSearch)}`,
+        `/api/quotation?page=${quotationPage}&pageSize=${quotationPageSize}&search=${encodeURIComponent(quotationSearch)}`,
       );
       if (!res.ok) {
         const text = await res.text();
         throw new Error(`Server returned ${res.status}: ${text.slice(0, 100)}`);
       }
       const data = await res.json();
-      setBills(data.data || []);
-      setBillTotal(data.total || 0);
+      setQuotations(data.data || []);
+      setQuotationTotal(data.total || 0);
     } catch (error) {
-      console.error("Failed to fetch bills:", error);
+      console.error("Failed to fetch quotations:", error);
     }
-  }, [billPage, billPageSize, billSearch]);
+  }, [quotationPage, quotationPageSize, quotationSearch]);
 
   useEffect(() => {
     if (activeTab === "inwards") {
       fetchInwards();
     } else {
-      fetchBills();
+      fetchQuotations();
     }
-  }, [activeTab, fetchInwards, fetchBills]);
+  }, [activeTab, fetchInwards, fetchQuotations]);
 
   useEffect(() => {
     fetchParties();
@@ -265,10 +266,10 @@ export default function BillingPage() {
     }
   };
 
-  const handleOpenBillModal = async () => {
+  const handleOpenQuotationModal = async () => {
     if (selectedIds.size === 0) return;
     try {
-      const res = await authFetch("/api/billing/generate-preview", {
+      const res = await authFetch("/api/quotation/generate-preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ inwardIds: Array.from(selectedIds) }),
@@ -278,41 +279,41 @@ export default function BillingPage() {
         throw new Error(errorData.error || errorData.message || 'Failed to generate preview');
       }
       const data = await res.json();
-      setBillPreview(data);
-      setIsBillModalOpen(true);
+      setQuotationPreview(data);
+      setIsQuotationModalOpen(true);
     } catch (error: any) {
       console.error("Failed to generate preview:", error);
       alert(`Error generating preview: ${error.message}`);
     }
   };
 
-  const handleSaveBill = async () => {
+  const handleSaveQuotation = async () => {
     try {
-      const res = await authFetch("/api/billing", {
+      const res = await authFetch("/api/quotation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(billPreview),
+        body: JSON.stringify(quotationPreview),
       });
       if (res.ok) {
         const data = await res.json();
-        setIsBillModalOpen(false);
+        setIsQuotationModalOpen(false);
         setSelectedIds(new Set());
         fetchInwards();
-        fetchBills();
+        fetchQuotations();
 
-        // Refresh company settings so invoice preview has latest data
+        // Refresh company settings so preview has latest data
         await fetchCompanySettings();
 
-        // Show Invoice Preview
-        setInvoicePreviewData(data);
+        // Show Quotation Preview
+        setQuotationPreviewData(data);
       } else {
         const errorData = await res.json();
-        alert(`Failed to save bill: ${errorData.error || "Unknown error"}`);
+        alert(`Failed to save quotation: ${errorData.error || "Unknown error"}`);
       }
     } catch (error) {
-      console.error("Failed to save bill:", error);
+      console.error("Failed to save quotation:", error);
       alert(
-        "Failed to save bill. Please check your connection or server status.",
+        "Failed to save quotation. Please check your connection or server status.",
       );
     }
   };
@@ -342,35 +343,35 @@ export default function BillingPage() {
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
       pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`Invoice_${invoicePreviewData?.bill?.billNumber}.pdf`);
+      pdf.save(`Quotation_${quotationPreviewData?.quotation?.quotationNumber}.pdf`);
     } catch (e) {
       console.error("Failed to generate PDF:", e);
       alert("Could not download PDF. Please try printing to PDF instead.");
     }
   };
 
-  const handleViewInvoice = async (bill: Bill) => {
+  const handleViewQuotation = async (quotation: Quotation) => {
     try {
       // Refresh company settings to ensure latest data
       await fetchCompanySettings();
   
       // Fetch party info
       const partyResponse = await authFetch(
-        `/api/party?pageSize=1&search=${encodeURIComponent(bill.partyId)}`,
+        `/api/party?pageSize=1&search=${encodeURIComponent(quotation.partyId)}`,
       );
       if (!partyResponse.ok) {
         throw new Error('Failed to fetch party details');
       }
       const partyData = await partyResponse.json();
   
-      setInvoicePreviewData({
-        bill,
+      setQuotationPreviewData({
+        quotation,
         partyDetails: partyData?.data?.[0] || {},
       });
     } catch (error) {
-      console.error("Failed to fetch party for invoice:", error);
-      setInvoicePreviewData({
-        bill,
+      console.error("Failed to fetch party for quotation:", error);
+      setQuotationPreviewData({
+        quotation,
         partyDetails: {},
       });
     }
@@ -460,40 +461,40 @@ export default function BillingPage() {
     return result + " Only";
   };
 
-  const handleEditBill = (bill: Bill) => {
-    setEditingBill(bill);
-    setBillFormData(bill);
-    setIsEditBillModalOpen(true);
+  const handleEditQuotation = (quotation: Quotation) => {
+    setEditingQuotation(quotation);
+    setQuotationFormData(quotation);
+    setIsEditQuotationModalOpen(true);
   };
 
-  const handleUpdateBill = async (e: React.FormEvent) => {
+  const handleUpdateQuotation = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingBill) return;
+    if (!editingQuotation) return;
     try {
-      const res = await authFetch(`/api/billing/${editingBill.id}`, {
+      const res = await authFetch(`/api/quotation/${editingQuotation.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(billFormData),
+        body: JSON.stringify(quotationFormData),
       });
       if (res.ok) {
-        setIsEditBillModalOpen(false);
-        fetchBills();
+        setIsEditQuotationModalOpen(false);
+        fetchQuotations();
       } else {
         const errorData = await res.json();
-        alert(`Failed to update bill: ${errorData.message || 'Unknown error'}`);
+        alert(`Failed to update quotation: ${errorData.message || 'Unknown error'}`);
       }
     } catch (error) {
-      console.error("Failed to update bill:", error);
-      alert('Network error while updating bill.');
+      console.error("Failed to update quotation:", error);
+      alert('Network error while updating quotation.');
     }
   };
 
-  const deleteBill = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this bill?")) return;
+  const deleteQuotation = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this quotation?")) return;
     try {
-      const res = await authFetch(`/api/billing/${id}`, { method: "DELETE" });
+      const res = await authFetch(`/api/quotation/${id}`, { method: "DELETE" });
       if (res.ok) {
-        fetchBills();
+        fetchQuotations();
       } else {
         const text = await res.text();
         let message = `Server returned ${res.status}`;
@@ -503,16 +504,16 @@ export default function BillingPage() {
         } catch {
           message += `: ${text.slice(0, 100)}`;
         }
-        alert(`Failed to delete bill: ${message}`);
+        alert(`Failed to delete quotation: ${message}`);
       }
     } catch (error) {
-      console.error("Failed to delete bill:", error);
-      alert('Network error while deleting bill. Is the backend server running?');
+      console.error("Failed to delete quotation:", error);
+      alert('Network error while deleting quotation. Is the backend server running?');
     }
   };
 
   const updateLineItem = (index: number, field: string, value: any) => {
-    const newLineItems = [...billPreview.lineItems];
+    const newLineItems = [...quotationPreview.lineItems];
     newLineItems[index] = { ...newLineItems[index], [field]: value };
 
     // Recalculate total for this item
@@ -551,8 +552,8 @@ export default function BillingPage() {
       taxTotal += (s * item.tax) / 100;
     });
 
-    setBillPreview({
-      ...billPreview,
+    setQuotationPreview({
+      ...quotationPreview,
       lineItems: newLineItems,
       subTotal,
       taxTotal,
@@ -569,7 +570,7 @@ export default function BillingPage() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-neutral-200 dark:border-neutral-800 pb-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 uppercase">
-              {activeTab === "inwards" ? "Billing Queue" : "Invoice History"}
+              {activeTab === "inwards" ? "Quotation Queue" : "Estimate History"}
             </h1>
             <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
               {activeTab === "inwards"
@@ -586,10 +587,10 @@ export default function BillingPage() {
               Pending Inwards
             </button>
             <button
-              onClick={() => setActiveTab("bills")}
-              className={`px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all ${activeTab === "bills" ? "bg-white dark:bg-neutral-700 text-indigo-600 shadow-sm" : "text-neutral-500"}`}
+              onClick={() => setActiveTab("quotations")}
+              className={`px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all ${activeTab === "quotations" ? "bg-white dark:bg-neutral-700 text-indigo-600 shadow-sm" : "text-neutral-500"}`}
             >
-              Saved Bills
+              Saved Quotations
             </button>
           </div>
         </div>
@@ -605,15 +606,15 @@ export default function BillingPage() {
             <div className="relative group">
               <select
                 id="pageSize"
-                value={activeTab === "inwards" ? pageSize : billPageSize}
+                value={activeTab === "inwards" ? pageSize : quotationPageSize}
                 onChange={(e) => {
                   const size = Number(e.target.value);
                   if (activeTab === "inwards") {
                     setPageSize(size);
                     setPage(1);
                   } else {
-                    setBillPageSize(size);
-                    setBillPage(1);
+                    setQuotationPageSize(size);
+                    setQuotationPage(1);
                   }
                 }}
                 className="appearance-none bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg py-1.5 pl-3 pr-8 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer transition-all hover:border-indigo-300"
@@ -641,11 +642,11 @@ export default function BillingPage() {
               <input
                 type="text"
                 placeholder="Search or select..."
-                value={activeTab === "inwards" ? search : billSearch}
+                value={activeTab === "inwards" ? search : quotationSearch}
                 onChange={(e) =>
                   activeTab === "inwards"
                     ? setSearch(e.target.value)
-                    : setBillSearch(e.target.value)
+                    : setQuotationSearch(e.target.value)
                 }
                 className="block w-full pl-10 pr-3 py-2.5 border border-neutral-200 dark:border-neutral-700 rounded-xl bg-neutral-50 dark:bg-neutral-800 text-sm placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all shadow-inner"
               />
@@ -653,7 +654,7 @@ export default function BillingPage() {
 
             {activeTab === "inwards" && (
               <button
-                onClick={handleOpenBillModal}
+                onClick={handleOpenQuotationModal}
                 disabled={selectedIds.size === 0}
                 className={`flex items-center justify-center space-x-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap w-full sm:w-auto active:scale-95 shadow-lg
                   ${selectedIds.size > 0
@@ -662,7 +663,7 @@ export default function BillingPage() {
                   }`}
               >
                 <Calculator className="w-4 h-4" />
-                <span>Generate Bill</span>
+                <span>Generate Quotation</span>
                 {selectedIds.size > 0 && (
                   <span className="bg-white/20 text-white text-xs px-2 py-0.5 rounded-full ml-1">
                     {selectedIds.size}
@@ -853,7 +854,7 @@ export default function BillingPage() {
                       scope="col"
                       className="px-6 py-4 text-left text-[10px] font-black text-neutral-500 dark:text-neutral-400 uppercase tracking-widest"
                     >
-                      Bill No
+                      Quotation No
                     </th>
                     <th
                       scope="col"
@@ -888,7 +889,7 @@ export default function BillingPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800 bg-white dark:bg-neutral-900">
-                  {bills.length === 0 ? (
+                  {quotations.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="px-6 py-20 text-center">
                         <div className="flex flex-col items-center justify-center space-y-3">
@@ -896,43 +897,43 @@ export default function BillingPage() {
                             <FileText className="w-10 h-10 text-neutral-300 dark:text-neutral-600" />
                           </div>
                           <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100 uppercase tracking-tight">
-                            No bills produced yet
+                            No quotation records
                           </p>
                         </div>
                       </td>
                     </tr>
                   ) : (
-                    bills.map((bill) => (
+                    quotations.map((quotation) => (
                       <tr
-                        key={bill.id}
+                        key={quotation.id}
                         className="hover:bg-neutral-50/50 dark:hover:bg-neutral-800/30 transition-all group"
                       >
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-black text-indigo-600 dark:text-indigo-400">
-                          {bill.billNumber}
+                          {quotation.quotationNumber}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-neutral-600 dark:text-neutral-400">
-                          {bill.date}
+                          {quotation.date}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                          {bill.partyId}
+                          {quotation.partyId}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-black text-neutral-900 dark:text-neutral-50">
                           ₹
-                          {bill.grandTotal.toLocaleString(undefined, {
+                          {quotation.grandTotal.toLocaleString(undefined, {
                             minimumFractionDigits: 2,
                           })}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center">
                           <span
                             className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tight border shadow-sm
-                            ${bill.paymentStatus === "Paid"
+                            ${quotation.status === "Approved"
                                 ? "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20"
-                                : bill.paymentStatus === "Pending"
+                                : quotation.status === "Pending"
                                   ? "bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20"
                                   : "bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20"
                               }`}
                           >
-                            {bill.paymentStatus || "Pending"}
+                            {quotation.status || "Pending"}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
@@ -943,21 +944,21 @@ export default function BillingPage() {
                             <div className="absolute right-0 top-full mt-2 w-36 bg-white dark:bg-neutral-950 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-800 opacity-0 invisible group-hover/menu:opacity-100 group-hover/menu:visible peer-focus:opacity-100 peer-focus:visible transition-all z-20 overflow-hidden text-left">
                               <div className="py-1">
                                 <button
-                                  onClick={() => handleViewInvoice(bill)}
+                                  onClick={() => handleViewQuotation(quotation)}
                                   className="w-full text-left px-4 py-2.5 text-xs font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 flex items-center gap-3 transition-colors"
                                 >
                                   <FileText className="w-4 h-4 text-indigo-500" />{" "}
-                                  View Invoice
+                                  View Quotation
                                 </button>
                                 <button
-                                  onClick={() => handleEditBill(bill)}
+                                  onClick={() => handleEditQuotation(quotation)}
                                   className="w-full text-left px-4 py-2.5 text-xs font-bold uppercase tracking-widest text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-900 flex items-center gap-3 transition-colors"
                                 >
                                   <Edit2 className="w-4 h-4 text-indigo-500" />{" "}
                                   Edit
                                 </button>
                                 <button
-                                  onClick={() => deleteBill(bill.id)}
+                                  onClick={() => deleteQuotation(quotation.id)}
                                   className="w-full text-left px-4 py-2.5 text-xs font-bold uppercase tracking-widest text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 flex items-center gap-3 transition-colors"
                                 >
                                   <Trash2 className="w-4 h-4 text-rose-500" />{" "}
@@ -996,15 +997,15 @@ export default function BillingPage() {
                 <>
                   Showing{" "}
                   <span className="text-neutral-900 dark:text-neutral-100">
-                    {(billPage - 1) * billPageSize + (bills.length > 0 ? 1 : 0)}
+                    {(quotationPage - 1) * quotationPageSize + (quotations.length > 0 ? 1 : 0)}
                   </span>{" "}
                   —{" "}
                   <span className="text-neutral-900 dark:text-neutral-100">
-                    {Math.min(billPage * billPageSize, billTotal)}
+                    {Math.min(quotationPage * quotationPageSize, quotationTotal)}
                   </span>{" "}
                   of{" "}
                   <span className="text-neutral-900 dark:text-neutral-100">
-                    {billTotal}
+                    {quotationTotal}
                   </span>
                 </>
               )}
@@ -1014,9 +1015,9 @@ export default function BillingPage() {
                 onClick={() =>
                   activeTab === "inwards"
                     ? setPage((p) => Math.max(1, p - 1))
-                    : setBillPage((p) => Math.max(1, p - 1))
+                    : setQuotationPage((p) => Math.max(1, p - 1))
                 }
-                disabled={activeTab === "inwards" ? page === 1 : billPage === 1}
+                disabled={activeTab === "inwards" ? page === 1 : quotationPage === 1}
                 className="p-2.5 rounded-xl border border-neutral-200 dark:border-neutral-700 text-neutral-500 hover:bg-white dark:hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-sm active:scale-90"
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -1025,15 +1026,15 @@ export default function BillingPage() {
                 onClick={() =>
                   activeTab === "inwards"
                     ? setPage((p) => Math.min(totalPages, p + 1))
-                    : setBillPage((p) =>
-                      Math.min(Math.ceil(billTotal / billPageSize), p + 1),
+                    : setQuotationPage((p) =>
+                      Math.min(Math.ceil(quotationTotal / quotationPageSize), p + 1),
                     )
                 }
                 disabled={
                   activeTab === "inwards"
                     ? page === totalPages || totalPages === 0
-                    : billPage === Math.ceil(billTotal / billPageSize) ||
-                    billTotal === 0
+                    : quotationPage === Math.ceil(quotationTotal / quotationPageSize) ||
+                    quotationTotal === 0
                 }
                 className="p-2.5 rounded-xl border border-neutral-200 dark:border-neutral-700 text-neutral-500 hover:bg-white dark:hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-sm active:scale-90"
               >
@@ -1233,12 +1234,12 @@ export default function BillingPage() {
           </div>
         </div>
       )}
-      {/* Bill Creation Screen / Modal */}
-      {isBillModalOpen && billPreview && (
+      {/* Quotation Creation Screen / Modal */}
+      {isQuotationModalOpen && quotationPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-neutral-900/60 backdrop-blur-md"
-            onClick={() => setIsBillModalOpen(false)}
+            onClick={() => setIsQuotationModalOpen(false)}
           ></div>
           <div className="relative bg-white dark:bg-neutral-900 rounded-4xl shadow-2xl w-full max-w-5xl border border-neutral-200 dark:border-neutral-800 overflow-hidden flex flex-col max-h-[95vh] animate-in fade-in zoom-in duration-300">
             {/* Modal Header */}
@@ -1246,14 +1247,14 @@ export default function BillingPage() {
               <div>
                 <h3 className="text-2xl font-black text-neutral-900 dark:text-neutral-50 tracking-tighter flex items-center gap-3">
                   <Calculator className="w-7 h-7 text-indigo-600" />
-                  Create New Bill
+                  Create New Quotation
                 </h3>
                 <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest mt-1">
-                  Invoice Generation for {billPreview.partyId}
+                  Quotation Generation for {quotationPreview.partyId}
                 </p>
               </div>
               <button
-                onClick={() => setIsBillModalOpen(false)}
+                onClick={() => setIsQuotationModalOpen(false)}
                 className="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
               >
                 <X className="w-6 h-6 text-neutral-400" />
@@ -1261,19 +1262,19 @@ export default function BillingPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-8 space-y-8">
-              {/* Bill Details */}
+              {/* Quotation Details */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
-                    Bill Number
+                    Quotation Number
                   </label>
                   <input
                     type="text"
-                    value={billPreview.billNumber}
+                    value={quotationPreview.quotationNumber}
                     onChange={(e) =>
-                      setBillPreview({
-                        ...billPreview,
-                        billNumber: e.target.value,
+                      setQuotationPreview({
+                        ...quotationPreview,
+                        quotationNumber: e.target.value,
                       })
                     }
                     className="w-full px-4 py-3 bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 rounded-2xl font-bold text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -1281,13 +1282,13 @@ export default function BillingPage() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
-                    Invoice Date
+                    Quotation Date
                   </label>
                   <input
                     type="date"
-                    value={billPreview.date}
+                    value={quotationPreview.date}
                     onChange={(e) =>
-                      setBillPreview({ ...billPreview, date: e.target.value })
+                      setQuotationPreview({ ...quotationPreview, date: e.target.value })
                     }
                     className="w-full px-4 py-3 bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 rounded-2xl font-bold text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-indigo-500 outline-none"
                   />
@@ -1297,7 +1298,7 @@ export default function BillingPage() {
                     Party ID
                   </label>
                   <p className="px-4 py-3 bg-neutral-100 dark:bg-neutral-800 rounded-2xl font-black text-indigo-600 dark:text-indigo-400 text-sm">
-                    {billPreview.partyId}
+                    {quotationPreview.partyId}
                   </p>
                 </div>
               </div>
@@ -1328,7 +1329,7 @@ export default function BillingPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                    {billPreview.lineItems.map((item: any, idx: number) => (
+                    {quotationPreview.lineItems.map((item: any, idx: number) => (
                       <tr
                         key={idx}
                         className="group hover:bg-white dark:hover:bg-neutral-900 transition-colors"
@@ -1404,10 +1405,10 @@ export default function BillingPage() {
                     <textarea
                       rows={4}
                       placeholder="Add payment terms or notes..."
-                      value={billPreview.remarks}
+                      value={quotationPreview.remarks}
                       onChange={(e) =>
-                        setBillPreview({
-                          ...billPreview,
+                        setQuotationPreview({
+                          ...quotationPreview,
                           remarks: e.target.value,
                         })
                       }
@@ -1423,7 +1424,7 @@ export default function BillingPage() {
                     </span>
                     <span className="font-bold font-mono">
                       ₹
-                      {billPreview.subTotal?.toLocaleString(undefined, {
+                      {quotationPreview.subTotal?.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                       })}
                     </span>
@@ -1434,7 +1435,7 @@ export default function BillingPage() {
                     </span>
                     <span className="font-bold font-mono">
                       ₹
-                      {billPreview.taxTotal?.toLocaleString(undefined, {
+                      {quotationPreview.taxTotal?.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                       })}
                     </span>
@@ -1447,7 +1448,7 @@ export default function BillingPage() {
                       </span>
                       <p className="text-4xl font-black tracking-tighter font-mono">
                         ₹
-                        {billPreview.grandTotal?.toLocaleString(undefined, {
+                        {quotationPreview.grandTotal?.toLocaleString(undefined, {
                           minimumFractionDigits: 2,
                         })}
                       </p>
@@ -1460,41 +1461,41 @@ export default function BillingPage() {
             {/* Footer Actions */}
             <div className="px-8 py-6 border-t border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex justify-end gap-5">
               <button
-                onClick={() => setIsBillModalOpen(false)}
+                onClick={() => setIsQuotationModalOpen(false)}
                 className="px-8 py-3.5 rounded-2xl border border-neutral-200 dark:border-neutral-700 font-bold text-neutral-500 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-all uppercase tracking-widest text-[10px]"
               >
                 Discard
               </button>
               <button
-                onClick={handleSaveBill}
+                onClick={handleSaveQuotation}
                 className="px-10 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black transition-all hover:shadow-indigo-500/30 shadow-lg active:scale-95 uppercase tracking-widest text-[10px] flex items-center gap-3"
               >
                 <FileText className="w-4 h-4" />
-                Save & Generate Invoice
+                Save & Generate Quotation
               </button>
             </div>
           </div>
         </div>
       )}
-      {/* Edit Bill Modal */}
-      {isEditBillModalOpen && (
+      {/* Edit Quotation Modal */}
+      {isEditQuotationModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-neutral-900/60 backdrop-blur-md"
-            onClick={() => setIsEditBillModalOpen(false)}
+            onClick={() => setIsEditQuotationModalOpen(false)}
           ></div>
           <div className="relative bg-white dark:bg-neutral-900 rounded-4xl shadow-2xl w-full max-w-4xl border border-neutral-200 dark:border-neutral-800 overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in duration-300">
             <div className="px-8 py-6 border-b border-neutral-100 dark:border-neutral-800 flex justify-between items-center bg-white dark:bg-neutral-900">
               <div>
                 <h3 className="text-2xl font-black text-neutral-900 dark:text-neutral-50 tracking-tighter">
-                  Edit Bill: {billFormData.billNumber}
+                  Edit Quotation: {quotationFormData.quotationNumber}
                 </h3>
                 <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400 mt-1">
-                  Update invoice details and status
+                  Update quotation details and status
                 </p>
               </div>
               <button
-                onClick={() => setIsEditBillModalOpen(false)}
+                onClick={() => setIsEditQuotationModalOpen(false)}
                 className="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
               >
                 <X className="w-6 h-6 text-neutral-400" />
@@ -1502,7 +1503,7 @@ export default function BillingPage() {
             </div>
 
             <form
-              onSubmit={handleUpdateBill}
+              onSubmit={handleUpdateQuotation}
               className="flex-1 overflow-y-auto p-8 space-y-8"
             >
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -1514,10 +1515,10 @@ export default function BillingPage() {
                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
                     <input
                       type="date"
-                      value={billFormData.outwardDate || ""}
+                      value={quotationFormData.outwardDate || ""}
                       onChange={(e) =>
-                        setBillFormData({
-                          ...billFormData,
+                        setQuotationFormData({
+                          ...quotationFormData,
                           outwardDate: e.target.value,
                         })
                       }
@@ -1535,10 +1536,10 @@ export default function BillingPage() {
                     <input
                       type="number"
                       min={1}
-                      value={billFormData.storageMonths || 1}
+                      value={quotationFormData.storageMonths || 1}
                       onChange={(e) =>
-                        setBillFormData({
-                          ...billFormData,
+                        setQuotationFormData({
+                          ...quotationFormData,
                           storageMonths: Number(e.target.value),
                         })
                       }
@@ -1557,10 +1558,10 @@ export default function BillingPage() {
                       type="number"
                       min={0}
                       max={100}
-                      value={billFormData.gst || 0}
+                      value={quotationFormData.gst || 0}
                       onChange={(e) =>
-                        setBillFormData({
-                          ...billFormData,
+                        setQuotationFormData({
+                          ...quotationFormData,
                           gst: Number(e.target.value),
                         })
                       }
@@ -1571,23 +1572,23 @@ export default function BillingPage() {
 
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
-                    Payment Status
+                    Status
                   </label>
                   <div className="relative">
                     <Wallet className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
                     <select
-                      value={billFormData.paymentStatus || "Pending"}
+                      value={quotationFormData.status || "Pending"}
                       onChange={(e) =>
-                        setBillFormData({
-                          ...billFormData,
-                          paymentStatus: e.target.value as any,
+                        setQuotationFormData({
+                          ...quotationFormData,
+                          status: e.target.value as any,
                         })
                       }
                       className="w-full pl-10 pr-4 py-3 bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 rounded-2xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none appearance-none"
                     >
-                      <option value="Paid">Paid</option>
+                      <option value="Approved">Approved</option>
                       <option value="Pending">Pending</option>
-                      <option value="Unpaid">Unpaid</option>
+                      <option value="Rejected">Rejected</option>
                     </select>
                   </div>
                 </div>
@@ -1599,10 +1600,10 @@ export default function BillingPage() {
                   <div className="relative">
                     <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
                     <select
-                      value={billFormData.paymentMode || "Cash"}
+                      value={quotationFormData.paymentMode || "Cash"}
                       onChange={(e) =>
-                        setBillFormData({
-                          ...billFormData,
+                        setQuotationFormData({
+                          ...quotationFormData,
                           paymentMode: e.target.value,
                         })
                       }
@@ -1623,10 +1624,10 @@ export default function BillingPage() {
                 </label>
                 <textarea
                   rows={3}
-                  value={billFormData.remarks || ""}
+                  value={quotationFormData.remarks || ""}
                   onChange={(e) =>
-                    setBillFormData({
-                      ...billFormData,
+                    setQuotationFormData({
+                      ...quotationFormData,
                       remarks: e.target.value,
                     })
                   }
@@ -1637,7 +1638,7 @@ export default function BillingPage() {
               <div className="mt-8 flex justify-end gap-5">
                 <button
                   type="button"
-                  onClick={() => setIsEditBillModalOpen(false)}
+                  onClick={() => setIsEditQuotationModalOpen(false)}
                   className="px-8 py-3 rounded-2xl border border-neutral-200 dark:border-neutral-700 font-bold text-neutral-500 text-[10px] uppercase tracking-widest"
                 >
                   Cancel
@@ -1646,22 +1647,22 @@ export default function BillingPage() {
                   type="submit"
                   className="px-10 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
                 >
-                  Update Bill
+                  Update Quotation
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-      {/* Invoice Preview Modal */}
-      {invoicePreviewData && (
+      {/* Quotation Preview Modal */}
+      {quotationPreviewData && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm print:bg-white print:z-auto print:block print:relative print:p-0 p-4">
           <div className="flex flex-col max-h-[95vh] w-full max-w-5xl bg-slate-100 rounded-lg shadow-2xl relative print:h-auto print:max-h-none print:shadow-none print:bg-white">
             {/* Modal Header controls (Hidden on Print) */}
             <div className="flex justify-between items-center p-4 bg-white border-b print:hidden rounded-t-lg">
               <h2 className="text-xl font-bold flex items-center gap-2">
                 <FileText className="text-indigo-600" />
-                Invoice Preview
+                Quotation Preview
               </h2>
               <div className="flex items-center gap-3">
                 <button
@@ -1669,7 +1670,7 @@ export default function BillingPage() {
                   className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold rounded-lg transition-colors"
                 >
                   <Printer className="w-4 h-4" />
-                  Print Invoice
+                  Print Quotation
                 </button>
                 <button
                   onClick={handleDownloadPDF}
@@ -1680,7 +1681,7 @@ export default function BillingPage() {
                 </button>
                 <div className="w-px h-6 bg-slate-200 mx-2"></div>
                 <button
-                  onClick={() => setInvoicePreviewData(null)}
+                  onClick={() => setQuotationPreviewData(null)}
                   className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 rounded-full transition-colors"
                 >
                   <X className="w-5 h-5" />
@@ -1738,7 +1739,7 @@ export default function BillingPage() {
                     </div>
                   </div>
 
-                  {/* Party & Bill Info Row */}
+                  {/* Party & Quotation Info Row */}
                   <div className="flex border-b border-black">
                     <div className="w-1/2 p-3 border-r border-black flex flex-col gap-1.5 text-xs font-bold font-mono">
                       <div className="flex">
@@ -1746,7 +1747,7 @@ export default function BillingPage() {
                           M/S:
                         </span>{" "}
                         <span className="uppercase text-sm leading-tight ml-2">
-                          {invoicePreviewData.bill.partyId}
+                          {quotationPreviewData.quotation.partyId}
                         </span>
                       </div>
                       <div className="flex">
@@ -1754,7 +1755,7 @@ export default function BillingPage() {
                           GST:
                         </span>{" "}
                         <span className="uppercase ml-2 leading-tight">
-                          {invoicePreviewData.partyDetails?.gstNumber ||
+                          {quotationPreviewData.partyDetails?.gstNumber ||
                             "Unregistered"}
                         </span>
                       </div>
@@ -1763,7 +1764,7 @@ export default function BillingPage() {
                           PAN:
                         </span>{" "}
                         <span className="uppercase ml-2 leading-tight">
-                          {invoicePreviewData.partyDetails?.panNumber || "-"}
+                          {quotationPreviewData.partyDetails?.panNumber || "-"}
                         </span>
                       </div>
                       <div className="flex">
@@ -1771,7 +1772,7 @@ export default function BillingPage() {
                           Ph:
                         </span>{" "}
                         <span className="uppercase ml-2 leading-tight">
-                          {invoicePreviewData.partyDetails?.mobileNo || "-"}
+                          {quotationPreviewData.partyDetails?.mobileNo || "-"}
                         </span>
                       </div>
                       <div className="flex">
@@ -1779,28 +1780,28 @@ export default function BillingPage() {
                           Email:
                         </span>{" "}
                         <span className="ml-2 leading-tight truncate">
-                          {invoicePreviewData.partyDetails?.email || "-"}
+                          {quotationPreviewData.partyDetails?.email || "-"}
                         </span>
                       </div>
-                      {invoicePreviewData.partyDetails?.address && (
+                      {quotationPreviewData.partyDetails?.address && (
                         <div className="flex mt-1 text-[10px] text-slate-600 leading-tight">
                           <span className="w-16 flex-shrink-0">ADD:</span>
                           <span className="uppercase ml-2">
-                            {invoicePreviewData.partyDetails.address},{" "}
-                            {invoicePreviewData.partyDetails.city}
+                            {quotationPreviewData.partyDetails.address},{" "}
+                            {quotationPreviewData.partyDetails.city}
                           </span>
                         </div>
                       )}
                     </div>
                     <div className="w-1/2 p-3 flex flex-col gap-1.5 text-xs font-bold relative font-mono">
                       <div className="absolute top-2 right-0 left-0 text-center font-black text-sm tracking-widest uppercase">
-                        TAX INVOICE
+                        QUOTATION / PROFORMA
                       </div>
                       <div className="mt-6 flex flex-col gap-2 relative z-10">
-                        <div>CASH/CREDIT Memo</div>
+                        <div>ESTIMATE / PROFORMA</div>
                         <div>SAC: {companySettings?.sacCode || "996721"}</div>
-                        <div>Bill No: {invoicePreviewData.bill.billNumber}</div>
-                        <div>Date: {invoicePreviewData.bill.date}</div>
+                        <div>Quotation No: {quotationPreviewData.quotation.quotationNumber}</div>
+                        <div>Date: {quotationPreviewData.quotation.date}</div>
                       </div>
                     </div>
                   </div>
@@ -1820,7 +1821,7 @@ export default function BillingPage() {
 
                   {/* Items Rows */}
                   <div className="flex-1 border-b border-black font-semibold text-[10px] flex flex-col divide-y divide-black/20 min-h-[300px]">
-                    {invoicePreviewData.bill.lineItems.map(
+                    {quotationPreviewData.quotation.lineItems.map(
                       (item: any, idx: number) => (
                         <div
                           key={idx}
@@ -1877,7 +1878,7 @@ export default function BillingPage() {
                           Remarks :
                         </span>{" "}
                         <span className="text-black uppercase">
-                          {invoicePreviewData.bill.remarks || "COLD RENT"}
+                          {quotationPreviewData.quotation.remarks || "COLD RENT"}
                         </span>
                       </div>
                       <div className="flex">
@@ -1920,10 +1921,10 @@ export default function BillingPage() {
                             Sub Total:
                           </span>{" "}
                           <span className="text-base text-black">
-                            ₹{invoicePreviewData.bill.subTotal.toFixed(2)}
+                            ₹{quotationPreviewData.quotation.subTotal.toFixed(2)}
                           </span>
                         </div>
-                        {invoicePreviewData.bill.taxTotal > 0 && (
+                        {quotationPreviewData.quotation.taxTotal > 0 && (
                           <>
                             <div className="flex justify-between items-center">
                               <span className="text-slate-500 font-bold uppercase tracking-tighter">
@@ -1931,7 +1932,7 @@ export default function BillingPage() {
                               </span>{" "}
                               <span className="text-black">
                                 ₹
-                                {(invoicePreviewData.bill.taxTotal / 2).toFixed(
+                                {(quotationPreviewData.quotation.taxTotal / 2).toFixed(
                                   2,
                                 )}
                               </span>
@@ -1942,7 +1943,7 @@ export default function BillingPage() {
                               </span>{" "}
                               <span className="text-black">
                                 ₹
-                                {(invoicePreviewData.bill.taxTotal / 2).toFixed(
+                                {(quotationPreviewData.quotation.taxTotal / 2).toFixed(
                                   2,
                                 )}
                               </span>
@@ -1955,7 +1956,7 @@ export default function BillingPage() {
                           Net Amount:
                         </span>
                         <span>
-                          ₹{invoicePreviewData.bill.grandTotal.toFixed(2)}
+                          ₹{quotationPreviewData.quotation.grandTotal.toFixed(2)}
                         </span>
                       </div>
                     </div>
@@ -1967,13 +1968,13 @@ export default function BillingPage() {
                       Amount in words:
                     </span>
                     <span className="text-black">
-                      {numberToWords(invoicePreviewData.bill.grandTotal)}
+                      {numberToWords(quotationPreviewData.quotation.grandTotal)}
                     </span>
                   </div>
 
                   {/* Terms & Signature */}
                   <div className="flex h-32">
-                    <div className="w-2/3 p-3 text-[9px] leading-relaxed border-r border-black flex flex-col justify-start text-slate-700 bg-white">
+                    <div className="w-2/3 p-3 text-[9px] font-medium border-r border-black flex flex-col justify-start text-slate-700 bg-white leading-relaxed">
                       <p className="font-black mb-1 text-black uppercase tracking-widest border-b border-black/10 inline-block">
                         Terms & Conditions:
                       </p>
@@ -1987,18 +1988,15 @@ export default function BillingPage() {
                       ) : (
                         <>
                           <p>
-                            1. Any complaint about this tax invoice must be
-                            lodged within two working days.
+                            1. This is a computer generated quotation and does not require physical signature.
                           </p>
                           <p>
-                            2. Payment to be made in favour of JCRM Cold Storage
-                            LLP.
+                            2. Rates are subject to change without notice.
                           </p>
                           <p>
-                            3. Interest @24% p.a. will be charged if not paid
-                            within 7 days.
+                            3. GST extra as applicable.
                           </p>
-                          <p>4. All goods are stored at owner's risk.</p>
+                          <p>4. Validity of this quotation is 7 days.</p>
                         </>
                       )}
                     </div>

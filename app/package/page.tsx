@@ -12,6 +12,7 @@ import {
   Box,
 } from "lucide-react";
 import { PackageMaster } from "@/app/lib/db";
+import { authFetch } from "@/app/lib/auth-fetch";
 
 export default function PackagePage() {
   const [packages, setPackages] = useState<PackageMaster[]>([]);
@@ -35,12 +36,16 @@ export default function PackagePage() {
 
   const fetchPackages = useCallback(async () => {
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `/api/package?page=${page}&pageSize=${pageSize}&search=${encodeURIComponent(search)}`,
       );
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Server returned ${res.status}: ${text.slice(0, 100)}`);
+      }
       const data = await res.json();
-      setPackages(data.data);
-      setTotal(data.total);
+      setPackages(data.data || []);
+      setTotal(data.total || 0);
     } catch (error) {
       console.error("Failed to fetch packages:", error);
     }
@@ -85,7 +90,7 @@ export default function PackagePage() {
     const method = editingPackage ? "PUT" : "POST";
 
     try {
-      const res = await fetch(url, {
+      const res = await authFetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
@@ -93,9 +98,13 @@ export default function PackagePage() {
       if (res.ok) {
         closeModal();
         fetchPackages();
+      } else {
+        const errorData = await res.json();
+        alert(`Failed to save: ${errorData.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error("Failed to save:", error);
+      alert('Network error while saving package.');
     }
   };
 
@@ -103,15 +112,16 @@ export default function PackagePage() {
     if (!confirm("Are you sure you want to delete this packaging type?"))
       return;
     try {
-      const res = await fetch(`/api/package/${id}`, { method: "DELETE" });
-      const data = await res.json();
+      const res = await authFetch(`/api/package/${id}`, { method: "DELETE" });
       if (res.ok) {
         fetchPackages();
       } else {
+        const data = await res.json();
         alert(data.error || "Failed to delete");
       }
     } catch (error) {
       console.error("Failed to delete:", error);
+      alert('Network error while deleting package.');
     }
   };
 

@@ -2,115 +2,134 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Search, MoreVertical, Edit2, Trash2, ArrowRightCircle, FileText, CheckCircle2, ChevronLeft, ChevronRight, Package, Download } from 'lucide-react';
-import { Inward, Category, ProductMaster } from '@/app/lib/db';
+import { Plus, Search, MoreVertical, Edit2, Trash2, Package, ChevronLeft, ChevronRight, CheckCircle2, X } from 'lucide-react';
+import { Category, ProductMaster } from '@/app/lib/db';
+import { authFetch } from '@/app/lib/auth-fetch';
 
-export default function ProductInwardPage() {
+export default function ProductMasterPage() {
   const router = useRouter();
-  const [inwards, setInwards] = useState<Inward[]>([]);
+  const [products, setProducts] = useState<ProductMaster[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState('');
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   
-  // Modal State for Product Master
+  // Modal State
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
-  const [isOutwardModalOpen, setIsOutwardModalOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<ProductMaster | null>(null);
   
   // Product Master Form State
   const [productFormData, setProductFormData] = useState<Partial<ProductMaster>>({
     status: 'Active',
-    unit: 'kg'
+    unit: 'kg',
+    name: '',
+    code: '',
+    categoryId: '',
+    hsnCode: '',
+    price: 0,
+    description: '',
+    defaultLifeMonths: 0
   });
 
-  // Outward (Entry) Modal Local state
-  const [selectedInward, setSelectedInward] = useState<Inward | null>(null);
-
-  const fetchInwards = useCallback(async () => {
+  const fetchProducts = useCallback(async () => {
     try {
-      const res = await fetch(`/api/inwards?page=${page}&pageSize=${pageSize}&search=${encodeURIComponent(search)}`);
+      const res = await authFetch(`/api/product?page=${page}&pageSize=${pageSize}&search=${encodeURIComponent(search)}`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Server returned ${res.status}: ${text.slice(0, 100)}`);
+      }
       const data = await res.json();
-      setInwards(data.data);
-      setTotal(data.total);
+      setProducts(data.data || []);
+      setTotal(data.total || 0);
     } catch (error) {
-      console.error('Failed to fetch inwards:', error);
+      console.error('Failed to fetch products:', error);
     }
   }, [page, pageSize, search]);
 
   const fetchCategories = useCallback(async () => {
     try {
-      const res = await fetch('/api/category?pageSize=100');
+      const res = await authFetch('/api/category?pageSize=100');
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Server returned ${res.status}: ${text.slice(0, 100)}`);
+      }
       const data = await res.json();
-      setCategories(data.data);
+      setCategories(data.data || []);
     } catch (error) {
       console.error('Failed to fetch categories:', error);
     }
   }, []);
 
   useEffect(() => {
-    fetchInwards();
-  }, [fetchInwards]);
+    fetchProducts();
+  }, [fetchProducts]);
 
   useEffect(() => {
     fetchCategories();
   }, [fetchCategories]);
 
-  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked) {
-      const allIds = new Set(inwards.map(i => i.id));
-      setSelectedIds(allIds);
+  const handleOpenProductModal = (product?: ProductMaster) => {
+    if (product) {
+      setEditingProduct(product);
+      setProductFormData({ ...product });
     } else {
-      setSelectedIds(new Set());
+      setEditingProduct(null);
+      setProductFormData({
+        status: 'Active',
+        unit: 'kg',
+        name: '',
+        code: '',
+        categoryId: '',
+        hsnCode: '',
+        price: 0,
+        description: '',
+        defaultLifeMonths: 0
+      });
     }
-  };
-
-  const handleSelectRow = (id: string) => {
-    const newSelected = new Set(selectedIds);
-    if (newSelected.has(id)) {
-      newSelected.delete(id);
-    } else {
-      newSelected.add(id);
-    }
-    setSelectedIds(newSelected);
-  };
-
-  const handleOpenProductModal = () => {
-    setProductFormData({
-      status: 'Active',
-      unit: 'kg',
-      name: '',
-      code: '',
-      hsnCode: '',
-      price: 0,
-      description: '',
-      defaultLifeMonths: 0
-    });
     setIsProductModalOpen(true);
   };
 
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/product', {
-        method: 'POST',
+      const url = editingProduct ? `/api/product/${editingProduct.id}` : '/api/product';
+      const method = editingProduct ? 'PUT' : 'POST';
+      
+      const res = await authFetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(productFormData),
       });
+
       if (res.ok) {
         setIsProductModalOpen(false);
-        alert('Product Master entry created successfully!');
+        alert(editingProduct ? 'Product updated successfully!' : 'Product created successfully!');
+        fetchProducts();
+      } else {
+        const errorData = await res.json();
+        alert(`Failed to save product: ${errorData.message || errorData.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to save product master:', error);
+      alert('Network error while saving product.');
     }
   };
 
-  const handleGenerateBill = () => {
-    if (selectedIds.size === 0) return;
-    alert(`Redirecting to bill screen with ${selectedIds.size} products...`);
-    // Router transition or logic to handle selectedIds
+  const handleDeleteProduct = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this product?')) return;
+    try {
+      const res = await authFetch(`/api/product/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchProducts();
+      } else {
+        const errorData = await res.json();
+        alert(`Failed to delete product: ${errorData.message || errorData.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Failed to delete product:', error);
+      alert('Network error while deleting product.');
+    }
   };
 
   const totalPages = Math.ceil(total / pageSize);
@@ -122,11 +141,11 @@ export default function ProductInwardPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50">Product</h1>
-            <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">Manage product inventory and master definitions</p>
+            <h1 className="text-3xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50">Products</h1>
+            <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">Manage product master definitions and pricing</p>
           </div>
           <button
-            onClick={handleOpenProductModal}
+            onClick={() => handleOpenProductModal()}
             className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg font-medium transition-all shadow-sm hover:shadow-md active:scale-95"
           >
             <Plus className="w-5 h-5" />
@@ -134,137 +153,88 @@ export default function ProductInwardPage() {
           </button>
         </div>
 
-        {/* Controls Above Table */}
+        {/* Controls */}
         <div className="bg-white dark:bg-neutral-900 p-4 rounded-xl shadow-sm border border-neutral-200 dark:border-neutral-800 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="flex items-center space-x-3 text-sm text-neutral-600 dark:text-neutral-300">
             <span className="font-medium">Show</span>
-            <div className="relative">
-              <select
-                id="pageSize"
-                value={pageSize}
-                onChange={(e) => {
-                  setPageSize(Number(e.target.value));
-                  setPage(1);
-                }}
-                className="appearance-none bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-md py-1.5 pl-3 pr-8 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-              >
-                {[10, 15, 20, 30].map(size => (
-                  <option key={size} value={size}>{size}</option>
-                ))}
-              </select>
-            </div>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setPage(1);
+              }}
+              className="bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-md py-1.5 px-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+            >
+              {[10, 15, 20, 50].map(size => (
+                <option key={size} value={size}>{size}</option>
+              ))}
+            </select>
             <span className="font-medium">Entries</span>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
-            <div className="relative w-full sm:w-64">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-4 w-4 text-neutral-400" />
-              </div>
-              <input
-                type="text"
-                placeholder="Search or select..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="block w-full pl-10 pr-3 py-2 border border-neutral-200 dark:border-neutral-700 rounded-lg bg-neutral-50 dark:bg-neutral-800 text-sm placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow"
-              />
+          <div className="relative w-full sm:w-80">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-4 w-4 text-neutral-400" />
             </div>
-            
-            <button
-              onClick={handleGenerateBill}
-              disabled={selectedIds.size === 0}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-sm transition-all whitespace-nowrap
-                ${selectedIds.size > 0 
-                  ? 'bg-neutral-900 hover:bg-neutral-800 text-white shadow-sm dark:bg-white dark:text-neutral-900 border border-transparent' 
-                  : 'bg-neutral-100 text-neutral-400 cursor-not-allowed dark:bg-neutral-800 dark:text-neutral-500 border border-neutral-200 dark:border-neutral-700'}`}
-            >
-              <FileText className="w-4 h-4" />
-              <span>Generate Bill</span>
-              {selectedIds.size > 0 && (
-                <span className="bg-indigo-600 text-white text-xs px-2 py-0.5 rounded-full ml-2">
-                  {selectedIds.size}
-                </span>
-              )}
-            </button>
+            <input
+              type="text"
+              placeholder="Search products..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="block w-full pl-10 pr-3 py-2 border border-neutral-200 dark:border-neutral-700 rounded-lg bg-neutral-50 dark:bg-neutral-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow"
+            />
           </div>
         </div>
 
-        {/* Table Area */}
+        {/* Table */}
         <div className="bg-white dark:bg-neutral-900 rounded-xl shadow-sm border border-neutral-200 dark:border-neutral-800 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-neutral-200 dark:divide-neutral-800">
               <thead className="bg-neutral-50 dark:bg-neutral-800/50">
                 <tr>
-                  <th scope="col" className="px-6 py-4 text-left">
-                    <input
-                      type="checkbox"
-                      className="rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
-                      checked={inwards.length > 0 && selectedIds.size === inwards.length}
-                      onChange={handleSelectAll}
-                    />
-                  </th>
-                  <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Inward Date</th>
-                  <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Total Weight</th>
-                  <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Remaining</th>
-                  <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Party</th>
-                  <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Product</th>
-                  <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Goods Condition</th>
-                  <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Outward</th>
-                  <th scope="col" className="px-6 py-4 text-right text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Action</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Product Name</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Code</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Category</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Unit</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Price (₹)</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-4 text-right text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 bg-white dark:bg-neutral-900">
-                {inwards.length === 0 ? (
+                {products.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-12 text-center text-sm text-neutral-500">
+                    <td colSpan={7} className="px-6 py-12 text-center">
                       <div className="flex flex-col items-center justify-center">
                         <Package className="w-12 h-12 text-neutral-300 dark:text-neutral-600 mb-4" />
-                        <p className="text-lg font-medium text-neutral-900 dark:text-neutral-100">No Product Inwards Found</p>
-                        <p className="mt-1">Add a new inward entry from the Inwards page.</p>
+                        <p className="text-lg font-medium text-neutral-900 dark:text-neutral-100">No Products Found</p>
+                        <p className="text-sm text-neutral-500 mt-1">Add your first product to get started.</p>
                       </div>
                     </td>
                   </tr>
                 ) : (
-                  inwards.map((inward) => (
-                    <tr key={inward.id} className="hover:bg-neutral-50/50 dark:hover:bg-neutral-800/50 transition-colors group">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <input
-                          type="checkbox"
-                          value={inward.id}
-                          checked={selectedIds.has(inward.id)}
-                          onChange={() => handleSelectRow(inward.id)}
-                          className="rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
-                        />
-                      </td>
+                  products.map((product) => (
+                    <tr key={product.id} className="hover:bg-neutral-50/50 dark:hover:bg-neutral-800/50 transition-colors group">
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                        {inward.inwardDate}
+                        {product.name}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
-                        {inward.totalWeight.toLocaleString()} kg
+                        {product.code || '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
+                        {product.categoryId || '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
+                        {product.unit}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-900 dark:text-neutral-100 font-semibold">
+                        ₹{product.price?.toLocaleString() || '0'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border
-                          ${inward.remainingWeight > 0 ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-neutral-100 text-neutral-600 border-neutral-200'}`}>
-                          {inward.remainingWeight.toLocaleString()} kg
+                          ${product.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                          {product.status}
                         </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-900 dark:text-neutral-100 font-medium">
-                        {inward.partyId}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
-                        {inward.productId}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
-                        {inward.goodsCondition || '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <button
-                          onClick={() => router.push(`/outwards?inwardId=${inward.id}`)}
-                          className="flex items-center space-x-1.5 text-indigo-600 hover:text-indigo-900 font-medium transition-colors"
-                        >
-                          <span>Entry</span>
-                          <ArrowRightCircle className="w-4 h-4" />
-                        </button>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                         <div className="relative flex justify-end items-center group/menu">
@@ -274,11 +244,13 @@ export default function ProductInwardPage() {
                           <div className="absolute right-0 top-full mt-1 w-32 bg-white dark:bg-neutral-900 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-800 opacity-0 invisible group-hover/menu:opacity-100 group-hover/menu:visible peer-focus:opacity-100 peer-focus:visible transition-all z-10">
                             <div className="py-1">
                               <button
+                                onClick={() => handleOpenProductModal(product)}
                                 className="w-full text-left px-4 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 flex items-center gap-2"
                               >
                                 <Edit2 className="w-4 h-4" /> Edit
                               </button>
                               <button
+                                onClick={() => handleDeleteProduct(product.id)}
                                 className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2"
                               >
                                 <Trash2 className="w-4 h-4" /> Delete
@@ -297,7 +269,7 @@ export default function ProductInwardPage() {
           {/* Pagination */}
           <div className="bg-neutral-50/50 dark:bg-neutral-800/20 px-6 py-4 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between">
             <div className="text-sm text-neutral-500 dark:text-neutral-400">
-              Showing <span className="font-medium text-neutral-900 dark:text-neutral-100">{(page - 1) * pageSize + (inwards.length > 0 ? 1 : 0)}</span> to <span className="font-medium text-neutral-900 dark:text-neutral-100">{Math.min(page * pageSize, total)}</span> of <span className="font-medium text-neutral-900 dark:text-neutral-100">{total}</span> entries
+              Showing <span className="font-medium text-neutral-900 dark:text-neutral-100">{(page - 1) * pageSize + (products.length > 0 ? 1 : 0)}</span> to <span className="font-medium text-neutral-900 dark:text-neutral-100">{Math.min(page * pageSize, total)}</span> of <span className="font-medium text-neutral-900 dark:text-neutral-100">{total}</span> entries
             </div>
             <div className="flex space-x-2">
               <button
@@ -319,18 +291,17 @@ export default function ProductInwardPage() {
         </div>
       </div>
 
-      {/* Product Master Modal */}
+      {/* Product Modal */}
       {isProductModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-neutral-900/40 backdrop-blur-sm transition-opacity" onClick={() => setIsProductModalOpen(false)}></div>
           <div className="relative bg-white dark:bg-neutral-900 rounded-2xl shadow-xl w-full max-w-2xl border border-neutral-200 dark:border-neutral-800 overflow-hidden text-left flex flex-col max-h-[90vh]">
             <div className="px-6 py-5 border-b border-neutral-200 dark:border-neutral-800 flex justify-between items-center bg-neutral-50/50 dark:bg-neutral-800/50">
-              <h3 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">Add New Product Master</h3>
+              <h3 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+                {editingProduct ? 'Edit Product' : 'Add New Product'}
+              </h3>
               <button onClick={() => setIsProductModalOpen(false)} className="text-neutral-400 hover:text-neutral-600">
-                <span className="sr-only">Close</span>
-                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <X className="h-6 w-6" />
               </button>
             </div>
             
@@ -468,7 +439,7 @@ export default function ProductInwardPage() {
                   type="submit"
                   className="px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition-all shadow-sm active:scale-95"
                 >
-                  Save Product
+                  {editingProduct ? 'Update Product' : 'Save Product'}
                 </button>
               </div>
             </form>

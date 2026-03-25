@@ -149,3 +149,31 @@ export const getInwardsData = () => {
 export const setInwardsData = (data: Inward[]) => {
   global.__inwards = data;
 };
+
+export interface Quotation {
+  id: string;
+  quotationNumber: string;
+  date: string;
+  partyId: string;
+  lineItems: Array<{
+    inwardId: string;
+    description: string;
+    quantity: number;
+    weight?: number;
+    rate: number;
+    tax: number;
+    total: number;
+  }>;
+  subTotal: number;
+  taxTotal: number;
+  grandTotal: number;
+  outwardDate?: string;
+  storageMonths?: number;
+  gst?: number;
+  status?: 'Approved' | 'Pending' | 'Rejected';
+  paymentMode?: string;
+  validUntil?: string;
+  remarks?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
