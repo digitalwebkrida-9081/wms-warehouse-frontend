@@ -14,7 +14,9 @@ import {
   CheckCircle2
 } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
+// Using relative path to trigger Next.js rewrites defined in next.config.ts
+const API_URL = ""; 
+
 
 export default function LoginPage() {
   const router = useRouter();
