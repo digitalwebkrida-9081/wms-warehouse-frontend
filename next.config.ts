@@ -4,7 +4,10 @@ const nextConfig: NextConfig = {
   /* config options here */
   reactCompiler: true,
   async rewrites() {
-    const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:5001";
+    const backendUrl =
+      process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:5001";
+    // const backendUrl =
+    //   process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
     return [
       {
         source: "/api/:path*",

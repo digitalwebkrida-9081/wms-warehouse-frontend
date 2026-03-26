@@ -1263,7 +1263,7 @@ export default function QuotationPage() {
 
             <div className="flex-1 overflow-y-auto p-8 space-y-8">
               {/* Quotation Details */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
                     Quotation Number
@@ -1291,6 +1291,19 @@ export default function QuotationPage() {
                       setQuotationPreview({ ...quotationPreview, date: e.target.value })
                     }
                     className="w-full px-4 py-3 bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 rounded-2xl font-bold text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                    Outward Date (Manual)
+                  </label>
+                  <input
+                    type="date"
+                    value={quotationPreview.outwardDate || ""}
+                    onChange={(e) =>
+                      setQuotationPreview({ ...quotationPreview, outwardDate: e.target.value })
+                    }
+                    className="w-full px-4 py-3 bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 rounded-2xl font-bold text-indigo-600 dark:text-indigo-400 shadow-inner outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
                 <div className="space-y-2">
@@ -1806,17 +1819,17 @@ export default function QuotationPage() {
                     </div>
                   </div>
 
-                  {/* Items Table Header */}
-                  <div className="flex border-b border-black bg-slate-100 font-bold text-[10px] uppercase text-center child-border-r divide-x divide-black">
-                    <div className="flex-[3] p-2 text-left">Product</div>
-                    <div className="flex-[1.5] p-2">In Date</div>
-                    <div className="flex-[1.5] p-2">Out Date</div>
-                    <div className="flex-1 p-2">Qty</div>
-                    <div className="flex-[1.5] p-2">Weight</div>
-                    <div className="flex-[1.5] p-2">Remaining</div>
-                    <div className="flex-[1.5] p-2">Price</div>
-                    <div className="flex-[1.2] p-2">Months</div>
-                    <div className="flex-[2] p-2 text-right">Amount</div>
+                  {/* Product Header */}
+                  <div className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] bg-neutral-50/50 border-y-2 border-slate-900 text-[10px] font-black uppercase text-center items-stretch h-10">
+                    <div className="px-2 flex items-center border-r border-slate-900 text-left">Product</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">In Date</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Out Date</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Qty</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Weight</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Rem.</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Price</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Mon.</div>
+                    <div className="px-2 flex items-center justify-center">Amount</div>
                   </div>
 
                   {/* Items Rows */}
@@ -1825,48 +1838,52 @@ export default function QuotationPage() {
                       (item: any, idx: number) => (
                         <div
                           key={idx}
-                          className="flex text-center divide-x divide-black/40 min-h-[28px] py-1.5 items-center"
+                          className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] text-center border-b border-black/20 items-stretch min-h-[32px]"
                         >
                           <div
-                            className="flex-[3] px-2 text-left truncate uppercase"
+                            className="px-2 py-1.5 text-left uppercase break-all border-r border-black/20 flex items-center"
                             title={item.description}
                           >
                             {item.description}
                           </div>
-                          <div className="flex-[1.5] px-2">
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
                             {item.inDate || "-"}
                           </div>
-                          <div className="flex-[1.5] px-2">-</div>
-                          <div className="flex-1 px-2">{item.quantity}</div>
-                          <div className="flex-[1.5] px-2">
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                            {item.outDate || quotationPreviewData.quotation.outwardDate || "-"}
+                          </div>
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                            {item.quantity}
+                          </div>
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
                             {item.weight || item.quantity}
                           </div>
-                          <div className="flex-[1.5] px-2">
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
                             {item.remaining || 0}
                           </div>
-                          <div className="flex-[1.5] px-2">
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
                             {Number(item.rate).toFixed(2)}
                           </div>
-                          <div className="flex-[1.2] px-2">
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
                             {item.months || 1}
                           </div>
-                          <div className="flex-[2] px-2 text-right">
+                          <div className="px-2 py-1.5 text-[10px] font-bold flex items-center justify-end">
                             {Number(item.total).toFixed(2)}
                           </div>
                         </div>
                       ),
                     )}
                     {/* Empty fill to stretch */}
-                    <div className="flex-1 divide-x divide-black/40 flex">
-                      <div className="flex-[3]"></div>
-                      <div className="flex-[1.5]"></div>
-                      <div className="flex-[1.5]"></div>
-                      <div className="flex-1"></div>
-                      <div className="flex-[1.5]"></div>
-                      <div className="flex-[1.5]"></div>
-                      <div className="flex-[1.5]"></div>
-                      <div className="flex-[1.2]"></div>
-                      <div className="flex-[2]"></div>
+                    <div className="flex-1 grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] items-stretch">
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div></div>
                     </div>
                   </div>
 

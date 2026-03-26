@@ -36,6 +36,7 @@ export default function InwardsPage({
     month: new Date().toLocaleString('default', { month: 'long' }),
     year: new Date().getFullYear().toString(),
     gst: 18,
+    outwardDate: new Date().toISOString().split('T')[0],
   });
 
   const fetchParties = useCallback(async () => {
@@ -196,7 +197,8 @@ export default function InwardsPage({
         body: JSON.stringify({ 
           inwardIds: Array.from(selectedIds),
           billPeriod: `${billParams.month} ${billParams.year}`,
-          gstRate: billParams.gst
+          gstRate: billParams.gst,
+          outwardDate: billParams.outwardDate
         }),
       });
       
@@ -679,6 +681,17 @@ export default function InwardsPage({
               </div>
 
               <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Outward Date (For Billing) <span className="text-red-500">*</span></label>
+                <input
+                  type="date"
+                  required
+                  value={billParams.outwardDate}
+                  onChange={(e) => setBillParams({ ...billParams, outwardDate: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+              </div>
+
+              <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-slate-400">GST Percentage (%) <span className="text-red-500">*</span></label>
                 <div className="relative">
                   <input
@@ -800,44 +813,44 @@ export default function InwardsPage({
                   </div>
 
                   {/* Items Table Header */}
-                  <div className="flex border-b border-black bg-slate-100 font-bold text-[10px] uppercase text-center child-border-r divide-x divide-black">
-                    <div className="flex-[3] p-2 text-left">Product</div>
-                    <div className="flex-[1.5] p-2">In Date</div>
-                    <div className="flex-[1.5] p-2">Out Date</div>
-                    <div className="flex-1 p-2">Qty</div>
-                    <div className="flex-[1.5] p-2">Weight</div>
-                    <div className="flex-[1.5] p-2">Remaining</div>
-                    <div className="flex-[1.5] p-2">Price</div>
-                    <div className="flex-[1.2] p-2">Months</div>
-                    <div className="flex-[2] p-2 text-right">Amount</div>
+                  <div className="grid grid-cols-[3fr_1.5fr_1.5fr_1fr_1.5fr_1.5fr_1.5fr_1.2fr_2fr] border-b border-black bg-slate-100 font-bold text-[10px] uppercase text-center child-border-r divide-x divide-black">
+                    <div className="p-2 text-left">Product</div>
+                    <div className="p-2">In Date</div>
+                    <div className="p-2">Out Date</div>
+                    <div className="p-2">Qty</div>
+                    <div className="p-2">Weight</div>
+                    <div className="p-2">Remaining</div>
+                    <div className="p-2">Price</div>
+                    <div className="p-2">Months</div>
+                    <div className="p-2 text-right">Amount</div>
                   </div>
 
                   {/* Items Rows */}
                   <div className="flex-1 border-b border-black font-semibold text-[10px] flex flex-col divide-y divide-black/20">
                     {invoicePreviewData.bill.lineItems.map((item: any, idx: number) => (
-                      <div key={idx} className="flex text-center divide-x divide-black/40 min-h-[28px] py-1 items-center">
-                        <div className="flex-[3] px-2 text-left truncate uppercase" title={item.description}>{item.description}</div>
-                        <div className="flex-[1.5] px-2">{item.inDate || '-'}</div>
-                        <div className="flex-[1.5] px-2">-</div>
-                        <div className="flex-1 px-2">{item.quantity}</div>
-                        <div className="flex-[1.5] px-2">{item.weight}</div>
-                        <div className="flex-[1.5] px-2">{item.remaining}</div>
-                        <div className="flex-[1.5] px-2 text-right">{item.rate.toFixed(2)}</div>
-                        <div className="flex-[1.2] px-2">{item.months}</div>
-                        <div className="flex-[2] px-2 text-right">{((item.weight * item.rate * item.months)).toFixed(2)}</div>
+                      <div key={idx} className="grid grid-cols-[3fr_1.5fr_1.5fr_1fr_1.5fr_1.5fr_1.5fr_1.2fr_2fr] text-center divide-x divide-black/40 min-h-[28px] py-1 items-center">
+                        <div className="px-2 text-left truncate uppercase" title={item.description}>{item.description}</div>
+                        <div className="px-2">{item.inDate || '-'}</div>
+                        <div className="px-2">{item.outDate || invoicePreviewData.bill.outwardDate || '-'}</div>
+                        <div className="px-2">{item.quantity}</div>
+                        <div className="px-2">{item.weight}</div>
+                        <div className="px-2">{item.remaining}</div>
+                        <div className="px-2 text-right">{item.rate.toFixed(2)}</div>
+                        <div className="px-2">{item.months}</div>
+                        <div className="px-2 text-right">{((item.weight * item.rate * item.months)).toFixed(2)}</div>
                       </div>
                     ))}
                     {/* Empty fill to stretch */}
-                    <div className="flex-1 divide-x divide-black/40 flex">
-                        <div className="flex-[3]"></div>
-                        <div className="flex-[1.5]"></div>
-                        <div className="flex-[1.5]"></div>
-                        <div className="flex-1"></div>
-                        <div className="flex-[1.5]"></div>
-                        <div className="flex-[1.5]"></div>
-                        <div className="flex-[1.5]"></div>
-                        <div className="flex-[1.2]"></div>
-                        <div className="flex-[2]"></div>
+                    <div className="flex-1 grid grid-cols-[3fr_1.5fr_1.5fr_1fr_1.5fr_1.5fr_1.5fr_1.2fr_2fr] divide-x divide-black/40">
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                        <div></div>
                     </div>
                   </div>
 

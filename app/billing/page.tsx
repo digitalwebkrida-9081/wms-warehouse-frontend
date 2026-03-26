@@ -48,12 +48,14 @@ interface CompanySettings {
   termsAndConditions: string[];
   jurisdiction: string;
   signatureLabel: string;
+  signatureUrl: string;
   footerText: string;
 }
 
 interface Inward {
   id: string;
   inwardDate: string;
+  date?: string; // Fallback
   partyId: string;
   productId: string;
   totalWeight: number;
@@ -97,6 +99,22 @@ export default function BillingPage() {
   const [isEditBillModalOpen, setIsEditBillModalOpen] = useState(false);
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
   const [billFormData, setBillFormData] = useState<Partial<Bill>>({});
+
+  interface LineItem {
+  productId: string;
+  description: string;
+  quantity: number;
+  weight: number;
+  remainingQuantity: number;
+  remaining?: number; // Fallback
+  price: number;
+  rate?: number; // Fallback
+  amount: number;
+  total?: number; // Fallback
+  inDate?: string;
+  date?: string; // Fallback
+  inwardId?: string;
+}
 
   const products = ["KESAR RAS GREEN DORI", "ALPHONSO MANGO", "FROZEN PEAS"];
 
@@ -794,7 +812,7 @@ export default function BillingPage() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-neutral-900 dark:text-neutral-100">
                           {inward.partyId}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-neutral-600 dark:text-neutral-400 italic">
+                        <td className="px-6 py-4 text-sm font-medium text-neutral-600 dark:text-neutral-400 italic">
                           {inward.productId}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
@@ -865,6 +883,12 @@ export default function BillingPage() {
                       scope="col"
                       className="px-6 py-4 text-left text-[10px] font-black text-neutral-500 dark:text-neutral-400 uppercase tracking-widest"
                     >
+                      Out Date
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-6 py-4 text-left text-[10px] font-black text-neutral-500 dark:text-neutral-400 uppercase tracking-widest"
+                    >
                       Party
                     </th>
                     <th
@@ -912,6 +936,9 @@ export default function BillingPage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-neutral-600 dark:text-neutral-400">
                           {bill.date}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-neutral-600 dark:text-neutral-400">
+                          {bill.outwardDate || "-"}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-neutral-900 dark:text-neutral-100">
                           {bill.partyId}
@@ -1299,6 +1326,39 @@ export default function BillingPage() {
                   <p className="px-4 py-3 bg-neutral-100 dark:bg-neutral-800 rounded-2xl font-black text-indigo-600 dark:text-indigo-400 text-sm">
                     {billPreview.partyId}
                   </p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                    Outward Date
+                  </label>
+                  <input
+                    type="date"
+                    value={billPreview.outwardDate || ""}
+                    onChange={(e) =>
+                      setBillPreview({
+                        ...billPreview,
+                        outwardDate: e.target.value,
+                      })
+                    }
+                    className="w-full px-4 py-3 bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 rounded-2xl font-bold text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                    Storage Months
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={billPreview.storageMonths || 1}
+                    onChange={(e) =>
+                      setBillPreview({
+                        ...billPreview,
+                        storageMonths: Number(e.target.value),
+                      })
+                    }
+                    className="w-full px-4 py-3 bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 rounded-2xl font-bold text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
                 </div>
               </div>
 
@@ -1800,72 +1860,75 @@ export default function BillingPage() {
                         <div>CASH/CREDIT Memo</div>
                         <div>SAC: {companySettings?.sacCode || "996721"}</div>
                         <div>Bill No: {invoicePreviewData.bill.billNumber}</div>
-                        <div>Date: {invoicePreviewData.bill.date}</div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Items Table Header */}
-                  <div className="flex border-b border-black bg-slate-100 font-bold text-[10px] uppercase text-center child-border-r divide-x divide-black">
-                    <div className="flex-[3] p-2 text-left">Product</div>
-                    <div className="flex-[1.5] p-2">In Date</div>
-                    <div className="flex-[1.5] p-2">Out Date</div>
-                    <div className="flex-1 p-2">Qty</div>
-                    <div className="flex-[1.5] p-2">Weight</div>
-                    <div className="flex-[1.5] p-2">Remaining</div>
-                    <div className="flex-[1.5] p-2">Price</div>
-                    <div className="flex-[1.2] p-2">Months</div>
-                    <div className="flex-[2] p-2 text-right">Amount</div>
+                  {/* Product Header */}
+                  <div className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] bg-neutral-50/50 border-y-2 border-slate-900 text-[10px] font-black uppercase text-center items-stretch h-10">
+                    <div className="px-2 flex items-center border-r border-slate-900 text-left">Product</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">In Date</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Out Date</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Qty</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Weight</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Rem.</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Price</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Mon.</div>
+                    <div className="px-2 flex items-center justify-center">Amount</div>
                   </div>
 
                   {/* Items Rows */}
-                  <div className="flex-1 border-b border-black font-semibold text-[10px] flex flex-col divide-y divide-black/20 min-h-[300px]">
+                  <div className="flex-1 border-b border-black font-semibold text-[10px] flex flex-col min-h-[300px]">
                     {invoicePreviewData.bill.lineItems.map(
                       (item: any, idx: number) => (
                         <div
                           key={idx}
-                          className="flex text-center divide-x divide-black/40 min-h-[28px] py-1.5 items-center"
+                          className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] text-center border-b border-black/20 items-stretch min-h-[32px]"
                         >
                           <div
-                            className="flex-[3] px-2 text-left truncate uppercase"
+                            className="px-2 py-1.5 text-left uppercase break-all border-r border-black/20 flex items-center"
                             title={item.description}
                           >
                             {item.description}
                           </div>
-                          <div className="flex-[1.5] px-2">
-                            {item.inDate || "-"}
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                            {item.inDate || item.date || "-"}
                           </div>
-                          <div className="flex-[1.5] px-2">-</div>
-                          <div className="flex-1 px-2">{item.quantity}</div>
-                          <div className="flex-[1.5] px-2">
-                            {item.weight || item.quantity}
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                            {item.outDate || invoicePreviewData.bill.outwardDate || "-"}
                           </div>
-                          <div className="flex-[1.5] px-2">
-                            {item.remaining || 0}
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                            {item.quantity || 0}
                           </div>
-                          <div className="flex-[1.5] px-2">
-                            {Number(item.rate).toFixed(2)}
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                            {item.weight || 0}
                           </div>
-                          <div className="flex-[1.2] px-2">
-                            {item.months || 1}
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                            {item.remainingQuantity || item.remaining || 0}
                           </div>
-                          <div className="flex-[2] px-2 text-right">
-                            {Number(item.total).toFixed(2)}
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                            {Number(item.price || item.rate || 0).toFixed(2)}
+                          </div>
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                            {invoicePreviewData.bill.storageMonths || item.months || 1}
+                          </div>
+                          <div className="px-2 py-1.5 text-[10px] font-bold flex items-center justify-end">
+                            {Number(item.amount || item.total || 0).toFixed(2)}
                           </div>
                         </div>
-                      ),
+                      )
                     )}
                     {/* Empty fill to stretch */}
-                    <div className="flex-1 divide-x divide-black/40 flex">
-                      <div className="flex-[3]"></div>
-                      <div className="flex-[1.5]"></div>
-                      <div className="flex-[1.5]"></div>
-                      <div className="flex-1"></div>
-                      <div className="flex-[1.5]"></div>
-                      <div className="flex-[1.5]"></div>
-                      <div className="flex-[1.5]"></div>
-                      <div className="flex-[1.2]"></div>
-                      <div className="flex-[2]"></div>
+                    <div className="flex-1 grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] items-stretch">
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div></div>
                     </div>
                   </div>
 
@@ -1920,10 +1983,10 @@ export default function BillingPage() {
                             Sub Total:
                           </span>{" "}
                           <span className="text-base text-black">
-                            ₹{invoicePreviewData.bill.subTotal.toFixed(2)}
+                            ₹{Number(invoicePreviewData.bill.subTotal || 0).toFixed(2)}
                           </span>
                         </div>
-                        {invoicePreviewData.bill.taxTotal > 0 && (
+                        {(invoicePreviewData.bill.taxTotal || 0) > 0 && (
                           <>
                             <div className="flex justify-between items-center">
                               <span className="text-slate-500 font-bold uppercase tracking-tighter">
@@ -1931,7 +1994,7 @@ export default function BillingPage() {
                               </span>{" "}
                               <span className="text-black">
                                 ₹
-                                {(invoicePreviewData.bill.taxTotal / 2).toFixed(
+                                {Number((invoicePreviewData.bill.taxTotal || 0) / 2).toFixed(
                                   2,
                                 )}
                               </span>
@@ -1942,7 +2005,7 @@ export default function BillingPage() {
                               </span>{" "}
                               <span className="text-black">
                                 ₹
-                                {(invoicePreviewData.bill.taxTotal / 2).toFixed(
+                                {Number((invoicePreviewData.bill.taxTotal || 0) / 2).toFixed(
                                   2,
                                 )}
                               </span>
@@ -1955,7 +2018,7 @@ export default function BillingPage() {
                           Net Amount:
                         </span>
                         <span>
-                          ₹{invoicePreviewData.bill.grandTotal.toFixed(2)}
+                          ₹{Number(invoicePreviewData.bill.grandTotal || 0).toFixed(2)}
                         </span>
                       </div>
                     </div>
@@ -1967,7 +2030,7 @@ export default function BillingPage() {
                       Amount in words:
                     </span>
                     <span className="text-black">
-                      {numberToWords(invoicePreviewData.bill.grandTotal)}
+                      {numberToWords(Number(invoicePreviewData.bill.grandTotal || 0))}
                     </span>
                   </div>
 
@@ -2002,9 +2065,21 @@ export default function BillingPage() {
                         </>
                       )}
                     </div>
-                    <div className="w-1/3 flex flex-col justify-between items-center p-4 text-[11px] bg-slate-50/50">
-                      <div className="flex-1"></div>
-                      <div className="w-full border-t-2 border-slate-900 text-center font-black pt-2 uppercase tracking-tighter">
+                    <div className="w-1/3 flex flex-col justify-end items-center p-4 text-[11px] bg-slate-50/50 relative">
+                      {/* Signature Image Container - Absolute Positioning to prevent layout shifts */}
+                      <div className="absolute top-2 bottom-14 left-4 right-4 flex items-center justify-center pointer-events-none">
+                        {companySettings?.signatureUrl && (
+                          <img 
+                            src={companySettings.signatureUrl}
+                            alt="Signature"
+                            className="max-h-full max-w-full object-contain mix-blend-multiply"
+                            crossOrigin="anonymous"
+                          />
+                        )}
+                      </div>
+
+                      {/* Signature Text Section */}
+                      <div className="w-full border-t-2 border-slate-900 text-center font-black pt-2 uppercase tracking-tighter relative z-10">
                         {companySettings?.signatureLabel ||
                           "Authorized Signatory"}
                         <div className="text-[9px] font-bold text-slate-500 mt-1 capitalize">

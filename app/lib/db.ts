@@ -101,6 +101,8 @@ export interface Bill {
     quantity: number;
     rate: number;
     tax: number;
+    inDate?: string;
+    outDate?: string;
     total: number;
   }>;
   subTotal: number;
@@ -160,6 +162,8 @@ export interface Quotation {
     description: string;
     quantity: number;
     weight?: number;
+    inDate?: string;
+    outDate?: string;
     rate: number;
     tax: number;
     total: number;

@@ -30,6 +30,7 @@ interface CompanySettings {
   termsAndConditions: string[];
   jurisdiction: string;
   signatureLabel: string;
+  signatureUrl: string;
   footerText: string;
 }
 
@@ -54,6 +55,7 @@ const defaultSettings: CompanySettings = {
   termsAndConditions: [],
   jurisdiction: '',
   signatureLabel: '',
+  signatureUrl: '',
   footerText: '',
 };
 
@@ -62,9 +64,11 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingSignature, setUploadingSignature] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [newTerm, setNewTerm] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const signatureInputRef = useRef<HTMLInputElement>(null);
 
   const showToast = (type: 'success' | 'error', message: string) => {
     setToast({ type, message });
@@ -157,6 +161,49 @@ export default function SettingsPage() {
     }
   };
 
+  const handleSignatureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUploadingSignature(true);
+      const formData = new FormData();
+      formData.append('signature', file);
+
+      const res = await authFetch('/api/settings/signature', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setSettings(prev => ({ ...prev, signatureUrl: data.signatureUrl }));
+        showToast('success', 'Signature uploaded successfully!');
+      } else {
+        showToast('error', 'Failed to upload signature');
+      }
+    } catch (error) {
+      console.error('Failed to upload signature:', error);
+      showToast('error', 'Failed to upload signature');
+    } finally {
+      setUploadingSignature(false);
+      if (signatureInputRef.current) signatureInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveSignature = async () => {
+    if (!confirm('Remove company signature?')) return;
+    try {
+      const res = await authFetch('/api/settings/signature', { method: 'DELETE' });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, signatureUrl: '' }));
+        showToast('success', 'Signature removed');
+      }
+    } catch (error) {
+      console.error('Failed to remove signature:', error);
+    }
+  };
+
   const addTerm = () => {
     if (!newTerm.trim()) return;
     setSettings(prev => ({
@@ -233,50 +280,100 @@ export default function SettingsPage() {
         </div>
 
         {/* Logo Section */}
-        <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-neutral-200 dark:border-neutral-800 p-8">
-          <h2 className="text-lg font-bold text-neutral-900 dark:text-neutral-100 flex items-center gap-2 mb-6">
-            <ImageIcon className="w-5 h-5 text-indigo-500" />
-            Company Logo
-          </h2>
-          <div className="flex items-center gap-8">
-            <div className="w-40 h-40 bg-neutral-100 dark:bg-neutral-800 rounded-2xl border-2 border-dashed border-neutral-300 dark:border-neutral-700 flex items-center justify-center overflow-hidden relative group">
-              {settings.logoUrl ? (
-                <>
-                  <img 
-                    src={settings.logoUrl} 
-                    alt="Company Logo" 
-                    className="w-full h-full object-contain p-2"
-                  />
-                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <button onClick={handleRemoveLogo} className="p-2 bg-rose-500 rounded-full text-white hover:bg-rose-600 transition-colors">
-                      <Trash2 className="w-5 h-5" />
-                    </button>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-neutral-200 dark:border-neutral-800 p-8">
+            <h2 className="text-lg font-bold text-neutral-900 dark:text-neutral-100 flex items-center gap-2 mb-6">
+              <ImageIcon className="w-5 h-5 text-indigo-500" />
+              Company Logo
+            </h2>
+            <div className="flex flex-col sm:flex-row items-center gap-6">
+              <div className="w-32 h-32 bg-neutral-100 dark:bg-neutral-800 rounded-2xl border-2 border-dashed border-neutral-300 dark:border-neutral-700 flex items-center justify-center overflow-hidden relative group shrink-0">
+                {settings.logoUrl ? (
+                  <>
+                    <img 
+                      src={settings.logoUrl} 
+                      alt="Company Logo" 
+                      className="w-full h-full object-contain p-2"
+                    />
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <button onClick={handleRemoveLogo} className="p-2 bg-rose-500 rounded-full text-white hover:bg-rose-600 transition-colors">
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center">
+                    <ImageIcon className="w-8 h-8 text-neutral-300 dark:text-neutral-600 mx-auto" />
+                    <p className="text-[10px] text-neutral-400 mt-2 uppercase font-bold tracking-wider">No logo</p>
                   </div>
-                </>
-              ) : (
-                <div className="text-center">
-                  <ImageIcon className="w-10 h-10 text-neutral-300 dark:text-neutral-600 mx-auto" />
-                  <p className="text-[10px] text-neutral-400 mt-2 uppercase font-bold tracking-wider">No logo</p>
-                </div>
-              )}
+                )}
+              </div>
+              <div className="space-y-3">
+                <input 
+                  ref={fileInputRef} 
+                  type="file" 
+                  accept="image/*" 
+                  className="hidden" 
+                  onChange={handleLogoUpload} 
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingLogo}
+                  className="flex items-center gap-2 px-6 py-3 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 font-bold rounded-xl transition-all text-sm w-full"
+                >
+                  {uploadingLogo ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                  {uploadingLogo ? 'Uploading...' : 'Upload Logo'}
+                </button>
+                <p className="text-[10px] text-neutral-400">Recommended: 400×400px</p>
+              </div>
             </div>
-            <div className="space-y-3">
-              <input 
-                ref={fileInputRef} 
-                type="file" 
-                accept="image/*" 
-                className="hidden" 
-                onChange={handleLogoUpload} 
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploadingLogo}
-                className="flex items-center gap-2 px-6 py-3 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 font-bold rounded-xl transition-all text-sm"
-              >
-                {uploadingLogo ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                {uploadingLogo ? 'Uploading...' : 'Upload Logo'}
-              </button>
-              <p className="text-xs text-neutral-400">PNG, JPG, SVG up to 5MB. Recommended: 400×400px</p>
+          </div>
+
+          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-neutral-200 dark:border-neutral-800 p-8">
+            <h2 className="text-lg font-bold text-neutral-900 dark:text-neutral-100 flex items-center gap-2 mb-6">
+              <FileText className="w-5 h-5 text-indigo-500" />
+              Company Stamp/Signature
+            </h2>
+            <div className="flex flex-col sm:flex-row items-center gap-6">
+              <div className="w-32 h-32 bg-neutral-100 dark:bg-neutral-800 rounded-2xl border-2 border-dashed border-neutral-300 dark:border-neutral-700 flex items-center justify-center overflow-hidden relative group shrink-0">
+                {settings.signatureUrl ? (
+                  <>
+                    <img 
+                      src={settings.signatureUrl} 
+                      alt="Company Signature" 
+                      className="w-full h-full object-contain p-2"
+                    />
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <button onClick={handleRemoveSignature} className="p-2 bg-rose-500 rounded-full text-white hover:bg-rose-600 transition-colors">
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center">
+                    <FileText className="w-8 h-8 text-neutral-300 dark:text-neutral-600 mx-auto" />
+                    <p className="text-[10px] text-neutral-400 mt-2 uppercase font-bold tracking-wider">No stamp</p>
+                  </div>
+                )}
+              </div>
+              <div className="space-y-3">
+                <input 
+                  ref={signatureInputRef} 
+                  type="file" 
+                  accept="image/*" 
+                  className="hidden" 
+                  onChange={handleSignatureUpload} 
+                />
+                <button
+                  onClick={() => signatureInputRef.current?.click()}
+                  disabled={uploadingSignature}
+                  className="flex items-center gap-2 px-6 py-3 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 font-bold rounded-xl transition-all text-sm w-full"
+                >
+                  {uploadingSignature ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                  {uploadingSignature ? 'Uploading...' : 'Upload Stamp'}
+                </button>
+                <p className="text-[10px] text-neutral-400">Displayed in Authorized Signatory space</p>
+              </div>
             </div>
           </div>
         </div>
