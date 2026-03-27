@@ -7,6 +7,7 @@ import {
   Image as ImageIcon, RefreshCw, Shield
 } from 'lucide-react';
 import { authFetch } from '@/app/lib/auth-fetch';
+import { useToast } from '@/app/_components/ToastProvider';
 
 interface CompanySettings {
   id?: string;
@@ -60,20 +61,17 @@ const defaultSettings: CompanySettings = {
 };
 
 export default function SettingsPage() {
+  const { showToast } = useToast();
   const [settings, setSettings] = useState<CompanySettings>(defaultSettings);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingSignature, setUploadingSignature] = useState(false);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [newTerm, setNewTerm] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const signatureInputRef = useRef<HTMLInputElement>(null);
 
-  const showToast = (type: 'success' | 'error', message: string) => {
-    setToast({ type, message });
-    setTimeout(() => setToast(null), 3000);
-  };
+
 
   const fetchSettings = useCallback(async () => {
     try {
@@ -246,17 +244,7 @@ export default function SettingsPage() {
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 p-6 font-sans">
       <div className="max-w-5xl mx-auto space-y-8">
 
-        {/* Toast Notification */}
-        {toast && (
-          <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl border text-sm font-bold transition-all animate-in slide-in-from-right fade-in duration-300 ${
-            toast.type === 'success' 
-              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-500/30'
-              : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/20 dark:text-rose-400 dark:border-rose-500/30'
-          }`}>
-            {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
-            {toast.message}
-          </div>
-        )}
+
 
         {/* Page Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-neutral-200 dark:border-neutral-800 pb-6">

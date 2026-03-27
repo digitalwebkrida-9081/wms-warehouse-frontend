@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 import { Quotation } from "@/app/lib/db";
 import { authFetch } from "@/app/lib/auth-fetch";
+import { useToast } from "@/app/_components/ToastProvider";
+import { useConfirm } from "@/app/_components/ConfirmProvider";
 
 interface CompanySettings {
   companyName: string;
@@ -63,13 +65,18 @@ interface Inward {
   inwardNumber?: string;
 }
 export default function QuotationPage() {
+  const { showToast } = useToast();
+  const confirm = useConfirm();
   const router = useRouter();
   const [inwards, setInwards] = useState<Inward[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState("");
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedInwardIds, setSelectedInwardIds] = useState<Set<string>>(new Set());
+  const [selectedQuotationIds, setSelectedQuotationIds] = useState<Set<string>>(new Set());
+  const [isManualMode, setIsManualMode] = useState(false);
+  const [products, setProducts] = useState<any[]>([]);
 
   // Quotation Management State
   const [isQuotationModalOpen, setIsQuotationModalOpen] = useState(false);
@@ -97,8 +104,6 @@ export default function QuotationPage() {
   const [isEditQuotationModalOpen, setIsEditQuotationModalOpen] = useState(false);
   const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(null);
   const [quotationFormData, setQuotationFormData] = useState<Partial<Quotation>>({});
-
-  const products = ["KESAR RAS GREEN DORI", "ALPHONSO MANGO", "FROZEN PEAS"];
 
   // Company Settings State
   const [companySettings, setCompanySettings] =
@@ -171,7 +176,27 @@ export default function QuotationPage() {
     }
   }, [quotationPage, quotationPageSize, quotationSearch]);
 
+  const fetchProducts = useCallback(async () => {
+    try {
+      const res = await authFetch("/api/product?pageSize=1000");
+      if (res.ok) {
+        const data = await res.json();
+        setProducts(data.data || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch products:", error);
+    }
+  }, []);
+
   useEffect(() => {
+    fetchInwards();
+    fetchQuotations();
+    fetchProducts();
+  }, [fetchInwards, fetchQuotations, fetchProducts]);
+
+  useEffect(() => {
+    setSelectedInwardIds(new Set());
+    setSelectedQuotationIds(new Set());
     if (activeTab === "inwards") {
       fetchInwards();
     } else {
@@ -183,23 +208,34 @@ export default function QuotationPage() {
     fetchParties();
   }, [fetchParties]);
 
-  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSelectAllInwards = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
-      const allIds = new Set(inwards.map((i) => i.id));
-      setSelectedIds(allIds);
+      setSelectedInwardIds(new Set(inwards.map((i) => i.id)));
     } else {
-      setSelectedIds(new Set());
+      setSelectedInwardIds(new Set());
     }
   };
 
-  const handleSelectRow = (id: string) => {
-    const newSelected = new Set(selectedIds);
-    if (newSelected.has(id)) {
-      newSelected.delete(id);
+  const handleSelectInwardRow = (id: string) => {
+    const newSelected = new Set(selectedInwardIds);
+    if (newSelected.has(id)) newSelected.delete(id);
+    else newSelected.add(id);
+    setSelectedInwardIds(newSelected);
+  };
+
+  const handleSelectAllQuotations = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedQuotationIds(new Set(quotations.map((q) => q.id)));
     } else {
-      newSelected.add(id);
+      setSelectedQuotationIds(new Set());
     }
-    setSelectedIds(newSelected);
+  };
+
+  const handleSelectQuotationRow = (id: string) => {
+    const newSelected = new Set(selectedQuotationIds);
+    if (newSelected.has(id)) newSelected.delete(id);
+    else newSelected.add(id);
+    setSelectedQuotationIds(newSelected);
   };
 
   const handleOpenModal = (inward?: Inward) => {
@@ -239,40 +275,79 @@ export default function QuotationPage() {
         fetchInwards();
       } else {
         const errorData = await res.json();
-        alert(`Failed to save inward: ${errorData.message || 'Unknown error'}`);
+        showToast('error', `Failed to save inward: ${errorData.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error("Failed to save inward:", error);
-      alert('Network error while saving inward.');
+      showToast('error', 'Network error while saving inward.');
     }
   };
 
   const handleDeleteInward = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this inward?")) return;
+    const confirmed = await confirm({
+      title: 'Delete Inward',
+      message: 'Are you sure you want to delete this inward? It may be linked to other records.',
+      type: 'danger',
+      confirmText: 'Delete Now'
+    });
+    if (!confirmed) return;
     try {
       const res = await authFetch(`/api/inwards/${id}`, { method: "DELETE" });
       if (res.ok) {
         fetchInwards();
-        const newSelected = new Set(selectedIds);
-        newSelected.delete(id);
-        setSelectedIds(newSelected);
+        setSelectedInwardIds(new Set());
       } else {
-        const errorData = await res.json();
-        alert(`Failed to delete inward: ${errorData.message || 'Unknown error'}`);
+        const text = await res.text();
+        showToast('error', `Failed to delete inward: ${text}`);
       }
     } catch (error) {
       console.error("Failed to delete inward:", error);
-      alert('Network error while deleting inward.');
+      showToast('error', 'Network error while deleting inward.');
+    }
+  };
+
+  const handleBulkDeleteInwards = async () => {
+    const count = selectedInwardIds.size;
+    if (count === 0) return;
+
+    const confirmed = await confirm({
+      title: 'Bulk Delete Inwards',
+      message: `Are you sure you want to delete ${count} selected records? This cannot be undone.`,
+      type: 'danger',
+      confirmText: `Delete ${count} Items`
+    });
+
+    if (!confirmed) return;
+
+    try {
+      const res = await authFetch('/api/inwards/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedInwardIds) }),
+      });
+
+      if (res.ok) {
+        showToast('success', `${count} inwards deleted successfully`);
+        setSelectedInwardIds(new Set());
+        fetchInwards();
+      } else {
+        const data = await res.json();
+        showToast('error', data.error || 'Failed to bulk delete inwards');
+      }
+    } catch (error) {
+      console.error('Bulk delete error:', error);
+      showToast('error', 'Network error during bulk delete');
     }
   };
 
   const handleOpenQuotationModal = async () => {
-    if (selectedIds.size === 0) return;
+    if (selectedInwardIds.size === 0) return;
+    setIsManualMode(false);
     try {
       const res = await authFetch("/api/quotation/generate-preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inwardIds: Array.from(selectedIds) }),
+        body: JSON.stringify({ inwardIds: Array.from(selectedInwardIds) }),
       });
       if (!res.ok) {
         const errorData = await res.json();
@@ -283,8 +358,53 @@ export default function QuotationPage() {
       setIsQuotationModalOpen(true);
     } catch (error: any) {
       console.error("Failed to generate preview:", error);
-      alert(`Error generating preview: ${error.message}`);
+      showToast('error', `Error generating preview: ${error.message}`);
     }
+  };
+
+  const handleCreateManualQuotation = async () => {
+    setIsManualMode(true);
+    try {
+      const res = await authFetch("/api/quotation/next-number");
+      if (!res.ok) throw new Error("Failed to fetch quotation number");
+      const { nextNumber } = await res.json();
+
+      setQuotationPreview({
+        quotationNumber: nextNumber,
+        date: new Date().toISOString().split("T")[0],
+        partyId: "",
+        lineItems: [],
+        subTotal: 0,
+        taxTotal: 0,
+        grandTotal: 0,
+        outwardDate: new Date().toISOString().split("T")[0],
+      });
+      setIsQuotationModalOpen(true);
+    } catch (error) {
+      console.error("Failed to start manual quotation:", error);
+      showToast('error', "Failed to start manual quotation.");
+    }
+  };
+
+  const addLineItem = () => {
+    const newLineItems = [
+      ...quotationPreview.lineItems,
+      {
+        description: "",
+        quantity: 0,
+        weight: 0,
+        rate: 0,
+        months: 1,
+        tax: 0,
+        total: 0,
+      },
+    ];
+    setQuotationPreview({ ...quotationPreview, lineItems: newLineItems });
+  };
+
+  const removeLineItem = (index: number) => {
+    const newLineItems = quotationPreview.lineItems.filter((_: any, i: number) => i !== index);
+    setQuotationPreview({ ...quotationPreview, lineItems: newLineItems });
   };
 
   const handleSaveQuotation = async () => {
@@ -297,7 +417,7 @@ export default function QuotationPage() {
       if (res.ok) {
         const data = await res.json();
         setIsQuotationModalOpen(false);
-        setSelectedIds(new Set());
+        setSelectedInwardIds(new Set());
         fetchInwards();
         fetchQuotations();
 
@@ -308,13 +428,11 @@ export default function QuotationPage() {
         setQuotationPreviewData(data);
       } else {
         const errorData = await res.json();
-        alert(`Failed to save quotation: ${errorData.error || "Unknown error"}`);
+        showToast('error', `Failed to save quotation: ${errorData.error || "Unknown error"}`);
       }
     } catch (error) {
       console.error("Failed to save quotation:", error);
-      alert(
-        "Failed to save quotation. Please check your connection or server status.",
-      );
+      showToast('error', "Failed to save quotation. Please check your connection or server status.");
     }
   };
 
@@ -327,11 +445,8 @@ export default function QuotationPage() {
       const html2canvas = (await import("html2canvas-pro")).default;
       const { jsPDF } = await import("jspdf");
 
-      const element = document.getElementById("invoice-content");
-      if (!element) return;
-
-      const canvas = await html2canvas(element, { scale: 2, useCORS: true });
-      const imgData = canvas.toDataURL("image/jpeg", 0.98);
+      const pages = document.querySelectorAll(".invoice-page");
+      if (!pages.length) return;
 
       const pdf = new jsPDF({
         orientation: "portrait",
@@ -339,14 +454,26 @@ export default function QuotationPage() {
         format: "a4",
       });
 
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      for (let i = 0; i < pages.length; i++) {
+        const canvas = await html2canvas(pages[i] as HTMLElement, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+        });
+        const imgData = canvas.toDataURL("image/jpeg", 0.98);
 
-      pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, pdfHeight);
+        if (i > 0) pdf.addPage();
+        
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = pdf.internal.pageSize.getHeight();
+        
+        pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, pdfHeight);
+      }
+
       pdf.save(`Quotation_${quotationPreviewData?.quotation?.quotationNumber}.pdf`);
     } catch (e) {
       console.error("Failed to generate PDF:", e);
-      alert("Could not download PDF. Please try printing to PDF instead.");
+      showToast('error', "Could not download PDF. Please try printing to PDF instead.");
     }
   };
 
@@ -481,34 +608,68 @@ export default function QuotationPage() {
         fetchQuotations();
       } else {
         const errorData = await res.json();
-        alert(`Failed to update quotation: ${errorData.message || 'Unknown error'}`);
+        showToast('error', `Failed to update quotation: ${errorData.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error("Failed to update quotation:", error);
-      alert('Network error while updating quotation.');
+      showToast('error', 'Network error while updating quotation.');
     }
   };
 
   const deleteQuotation = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this quotation?")) return;
+    const confirmed = await confirm({
+      title: 'Delete Quotation',
+      message: 'Are you sure you want to delete this quotation? This action is permanent.',
+      type: 'danger',
+      confirmText: 'Delete Quotation'
+    });
+    if (!confirmed) return;
     try {
       const res = await authFetch(`/api/quotation/${id}`, { method: "DELETE" });
       if (res.ok) {
         fetchQuotations();
+        setSelectedQuotationIds(new Set());
       } else {
         const text = await res.text();
-        let message = `Server returned ${res.status}`;
-        try {
-          const errorData = JSON.parse(text);
-          message = errorData.error || errorData.message || message;
-        } catch {
-          message += `: ${text.slice(0, 100)}`;
-        }
-        alert(`Failed to delete quotation: ${message}`);
+        showToast('error', `Failed to delete quotation: ${text}`);
       }
     } catch (error) {
       console.error("Failed to delete quotation:", error);
-      alert('Network error while deleting quotation. Is the backend server running?');
+      showToast('error', 'Network error while deleting quotation.');
+    }
+  };
+
+  const handleBulkDeleteQuotations = async () => {
+    const count = selectedQuotationIds.size;
+    if (count === 0) return;
+
+    const confirmed = await confirm({
+      title: 'Bulk Delete Quotations',
+      message: `Are you sure you want to delete ${count} selected quotations? This action cannot be undone.`,
+      type: 'danger',
+      confirmText: `Delete ${count} Quotations`
+    });
+
+    if (!confirmed) return;
+
+    try {
+      const res = await authFetch('/api/quotation/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedQuotationIds) }),
+      });
+
+      if (res.ok) {
+        showToast('success', `${count} quotations deleted successfully`);
+        setSelectedQuotationIds(new Set());
+        fetchQuotations();
+      } else {
+        const data = await res.json();
+        showToast('error', data.error || 'Failed to bulk delete');
+      }
+    } catch (error) {
+      console.error('Bulk delete error:', error);
+      showToast('error', 'Network error during bulk delete');
     }
   };
 
@@ -652,24 +813,52 @@ export default function QuotationPage() {
               />
             </div>
 
+            <button
+              onClick={handleCreateManualQuotation}
+              className="flex items-center justify-center space-x-2 px-6 py-2.5 rounded-xl font-bold text-sm bg-indigo-600 hover:bg-indigo-700 text-white transition-all active:scale-95 shadow-lg shadow-indigo-500/10 w-full sm:w-auto whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create New Quotation</span>
+            </button>
+
             {activeTab === "inwards" && (
-              <button
-                onClick={handleOpenQuotationModal}
-                disabled={selectedIds.size === 0}
-                className={`flex items-center justify-center space-x-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap w-full sm:w-auto active:scale-95 shadow-lg
-                  ${selectedIds.size > 0
-                    ? "bg-indigo-600 hover:bg-indigo-700 text-white hover:shadow-indigo-500/20"
-                    : "bg-neutral-100 text-neutral-400 cursor-not-allowed dark:bg-neutral-800 dark:text-neutral-600 shadow-none"
-                  }`}
-              >
-                <Calculator className="w-4 h-4" />
-                <span>Generate Quotation</span>
-                {selectedIds.size > 0 && (
-                  <span className="bg-white/20 text-white text-xs px-2 py-0.5 rounded-full ml-1">
-                    {selectedIds.size}
-                  </span>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                {selectedInwardIds.size > 0 && (
+                  <button
+                    onClick={handleBulkDeleteInwards}
+                    className="flex items-center justify-center space-x-2 px-6 py-2.5 rounded-xl font-bold text-sm bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20 transition-all active:scale-95"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete ({selectedInwardIds.size})</span>
+                  </button>
                 )}
-              </button>
+                <button
+                  onClick={handleOpenQuotationModal}
+                  disabled={selectedInwardIds.size === 0}
+                  className={`flex items-center justify-center space-x-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap flex-1 sm:flex-initial active:scale-95 shadow-lg
+                    ${selectedInwardIds.size > 0
+                      ? "bg-indigo-600 hover:bg-indigo-700 text-white hover:shadow-indigo-500/20"
+                      : "bg-neutral-100 text-neutral-400 cursor-not-allowed dark:bg-neutral-800 dark:text-neutral-600 shadow-none"
+                    }`}
+                >
+                  <Calculator className="w-4 h-4" />
+                  <span>Generate Quotation</span>
+                </button>
+              </div>
+            )}
+
+            {activeTab === "quotations" && (
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                {selectedQuotationIds.size > 0 && (
+                  <button
+                    onClick={handleBulkDeleteQuotations}
+                    className="flex items-center justify-center space-x-2 px-6 py-2.5 rounded-xl font-bold text-sm bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20 transition-all active:scale-95 w-full sm:w-auto shadow-lg shadow-rose-500/10"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Bulk Delete ({selectedQuotationIds.size})</span>
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -683,12 +872,12 @@ export default function QuotationPage() {
                     <th scope="col" className="px-6 py-4 text-left">
                       <input
                         type="checkbox"
-                        className="rounded-lg border-neutral-300 text-indigo-600 focus:ring-indigo-500 w-5 h-5 transition-all"
+                        className="rounded-lg border-neutral-300 text-indigo-600 focus:ring-indigo-500 w-5 h-5 transition-all cursor-pointer"
                         checked={
                           inwards.length > 0 &&
-                          selectedIds.size === inwards.length
+                          selectedInwardIds.size === inwards.length
                         }
-                        onChange={handleSelectAll}
+                        onChange={handleSelectAllInwards}
                       />
                     </th>
                     <th
@@ -765,8 +954,8 @@ export default function QuotationPage() {
                           <input
                             type="checkbox"
                             value={inward.id}
-                            checked={selectedIds.has(inward.id)}
-                            onChange={() => handleSelectRow(inward.id)}
+                            checked={selectedInwardIds.has(inward.id)}
+                            onChange={() => handleSelectInwardRow(inward.id)}
                             className="rounded-lg border-neutral-300 text-indigo-600 focus:ring-indigo-500 w-5 h-5 cursor-pointer shadow-sm transition-all"
                           />
                         </td>
@@ -908,6 +1097,17 @@ export default function QuotationPage() {
                         key={quotation.id}
                         className="hover:bg-neutral-50/50 dark:hover:bg-neutral-800/30 transition-all group"
                       >
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <input
+                            type="checkbox"
+                            value={quotation.id}
+                            checked={selectedQuotationIds.has(quotation.id)}
+                            onChange={() =>
+                              handleSelectQuotationRow(quotation.id)
+                            }
+                            className="rounded-lg border-neutral-300 text-indigo-600 focus:ring-indigo-500 w-5 h-5 cursor-pointer shadow-sm transition-all"
+                          />
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-black text-indigo-600 dark:text-indigo-400">
                           {quotation.quotationNumber}
                         </td>
@@ -1126,9 +1326,9 @@ export default function QuotationPage() {
                     <option value="" disabled>
                       Select Product
                     </option>
-                    {products.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
+                    {products.map((p: any) => (
+                      <option key={p.id || p.name} value={p.name}>
+                        {p.name}
                       </option>
                     ))}
                   </select>
@@ -1308,11 +1508,31 @@ export default function QuotationPage() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
-                    Party ID
+                    Party {isManualMode && <span className="text-red-500">*</span>}
                   </label>
-                  <p className="px-4 py-3 bg-neutral-100 dark:bg-neutral-800 rounded-2xl font-black text-indigo-600 dark:text-indigo-400 text-sm">
-                    {quotationPreview.partyId}
-                  </p>
+                  {isManualMode ? (
+                    <select
+                      value={quotationPreview.partyId || ""}
+                      onChange={(e) =>
+                        setQuotationPreview({
+                          ...quotationPreview,
+                          partyId: e.target.value,
+                        })
+                      }
+                      className="w-full px-4 py-3 bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 rounded-2xl font-bold text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    >
+                      <option value="">Select Party</option>
+                      {parties.map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="px-4 py-3 bg-neutral-100 dark:bg-neutral-800 rounded-2xl font-black text-indigo-600 dark:text-indigo-400 text-sm">
+                      {quotationPreview.partyId}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1322,7 +1542,7 @@ export default function QuotationPage() {
                   <thead>
                     <tr className="border-b border-neutral-100 dark:border-neutral-800">
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400">
-                        Description
+                        Description / Product
                       </th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-32">
                         Weight/Qty
@@ -1339,6 +1559,7 @@ export default function QuotationPage() {
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 text-right w-40">
                         Total (₹)
                       </th>
+                      <th className="px-6 py-4 text-center w-20"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -1348,23 +1569,40 @@ export default function QuotationPage() {
                         className="group hover:bg-white dark:hover:bg-neutral-900 transition-colors"
                       >
                         <td className="px-6 py-4">
-                          <input
-                            type="text"
-                            value={item.description}
-                            onChange={(e) =>
-                              updateLineItem(idx, "description", e.target.value)
-                            }
-                            className="w-full bg-transparent font-medium border-0 focus:ring-0 p-0 outline-none text-neutral-900 dark:text-neutral-100"
-                          />
+                          {isManualMode ? (
+                            <select
+                              value={item.description}
+                              onChange={(e) =>
+                                updateLineItem(idx, "description", e.target.value)
+                              }
+                              className="w-full bg-neutral-100 dark:bg-neutral-800/50 border-0 rounded-lg px-2 py-1.5 font-bold focus:ring-1 focus:ring-indigo-500 outline-none h-10 shadow-sm"
+                            >
+                              <option value="">Select Product</option>
+                              {products.map((p) => (
+                                <option key={p.id} value={p.name}>
+                                  {p.name}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              value={item.description}
+                              onChange={(e) =>
+                                updateLineItem(idx, "description", e.target.value)
+                              }
+                              className="w-full bg-transparent font-medium border-0 focus:ring-0 p-0 outline-none text-neutral-900 dark:text-neutral-100"
+                            />
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           <input
                             type="number"
-                            value={item.weight || item.quantity} // Default to weight, or fallback to quantity
+                            value={item.weight || item.quantity}
                             onChange={(e) =>
                               updateLineItem(idx, "weight", e.target.value)
                             }
-                            className="w-full bg-neutral-100 dark:bg-neutral-800/50 border-0 rounded-lg px-2 py-1.5 font-bold focus:ring-1 focus:ring-indigo-500 outline-none"
+                            className="w-full bg-neutral-100 dark:bg-neutral-800/50 border-0 rounded-lg px-2 py-1.5 font-bold focus:ring-1 focus:ring-indigo-500 outline-none h-10 shadow-sm"
                           />
                         </td>
                         <td className="px-6 py-4">
@@ -1374,27 +1612,27 @@ export default function QuotationPage() {
                             onChange={(e) =>
                               updateLineItem(idx, "months", e.target.value)
                             }
-                            className="w-full bg-neutral-100 dark:bg-neutral-800/50 border-0 rounded-lg px-2 py-1.5 font-bold focus:ring-1 focus:ring-indigo-500 outline-none"
+                            className="w-full bg-neutral-100 dark:bg-neutral-800/50 border-0 rounded-lg px-2 py-1.5 font-bold focus:ring-1 focus:ring-indigo-500 outline-none h-10 shadow-sm"
                           />
                         </td>
                         <td className="px-6 py-4">
                           <input
                             type="number"
-                            value={item.rate}
+                            value={item.rate || 0}
                             onChange={(e) =>
                               updateLineItem(idx, "rate", e.target.value)
                             }
-                            className="w-full bg-neutral-100 dark:bg-neutral-800/50 border-0 rounded-lg px-2 py-1.5 font-bold focus:ring-1 focus:ring-indigo-500 outline-none"
+                            className="w-full bg-neutral-100 dark:bg-neutral-800/50 border-0 rounded-lg px-2 py-1.5 font-bold focus:ring-1 focus:ring-indigo-500 outline-none h-10 shadow-sm"
                           />
                         </td>
                         <td className="px-6 py-4">
                           <input
                             type="number"
-                            value={item.tax}
+                            value={item.tax || 0}
                             onChange={(e) =>
                               updateLineItem(idx, "tax", e.target.value)
                             }
-                            className="w-full bg-neutral-100 dark:bg-neutral-800/50 border-0 rounded-lg px-2 py-1.5 font-bold focus:ring-1 focus:ring-indigo-500 outline-none"
+                            className="w-full bg-neutral-100 dark:bg-neutral-800/50 border-0 rounded-lg px-2 py-1.5 font-bold focus:ring-1 focus:ring-indigo-500 outline-none h-10 shadow-sm"
                           />
                         </td>
                         <td className="px-6 py-4 text-right font-black text-indigo-600 dark:text-indigo-400">
@@ -1402,8 +1640,28 @@ export default function QuotationPage() {
                             minimumFractionDigits: 2,
                           })}
                         </td>
+                        <td className="px-4 py-4 text-center">
+                          <button
+                            onClick={() => removeLineItem(idx)}
+                            className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/40 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                            title="Remove Item"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
                       </tr>
                     ))}
+                    <tr>
+                      <td colSpan={7} className="px-6 py-4">
+                        <button
+                          onClick={addLineItem}
+                          className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 transition-colors"
+                        >
+                          <Plus className="w-4 h-4" />
+                          Add Line Item
+                        </button>
+                      </td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -1701,347 +1959,410 @@ export default function QuotationPage() {
                 </button>
               </div>
             </div>
-
             {/* A4 Printable Area */}
-            <div className="flex-1 overflow-auto p-4 print:p-0 print:overflow-visible custom-scrollbar flex justify-center">
-              <div
-                id="invoice-content"
-                className="w-[210mm] min-h-[297mm] bg-white text-black p-[10mm] shadow-md border border-slate-200 print:shadow-none print:border-none print:w-full font-sans text-sm mx-auto"
-              >
-                <div className="border border-black flex flex-col h-full relative">
-                  {/* Header Row */}
-                  <div className="flex border-b border-black">
-                    <div className="w-1/3 p-4 flex flex-col items-center justify-center border-r border-black relative">
-                      {companySettings?.logoUrl ? (
-                        <img
-                          src={
-                            companySettings.logoUrl.startsWith("http")
-                              ? companySettings.logoUrl
-                              : `${window.location.origin}${companySettings.logoUrl}`
-                          }
-                          alt="Company Logo"
-                          className="max-h-20 max-w-full object-contain"
-                          crossOrigin="anonymous"
-                        />
-                      ) : (
-                        <>
-                          <h1 className="text-4xl font-black text-blue-900 tracking-tighter leading-none">
-                            {companySettings?.companyShortName || "JCRM"}
-                          </h1>
-                          <p className="text-xl font-bold text-blue-900 mt-1 whitespace-nowrap uppercase">
-                            {companySettings?.companyTagline || "COLD STORAGE"}
-                          </p>
-                        </>
-                      )}
-                    </div>
-                    <div className="w-2/3 flex flex-col">
-                      <div className="bg-slate-200 font-bold text-center text-lg py-1 border-b border-black uppercase tracking-widest">
-                        {companySettings?.companyName ||
-                          "JCRM COLD STORAGE LLP"}
-                      </div>
-                      <div className="text-center p-2 text-[11px] leading-relaxed font-semibold">
-                        <p>{companySettings?.address || ""}</p>
-                        <p>
-                          Phone: {companySettings?.phone || ""} | Email:{" "}
-                          {companySettings?.email || ""}
-                        </p>
-                        <p className="mt-1 font-bold">
-                          GST: {companySettings?.gstNumber || ""}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+            <div className="flex-1 overflow-auto p-4 print:p-0 print:overflow-visible custom-scrollbar flex flex-col items-center gap-8 print:gap-0">
+               {(() => {
+                const ITEMS_PER_PAGE = 10;
+                const items = quotationPreviewData.quotation.lineItems;
+                const chunks = [];
+                for (let i = 0; i < items.length; i += ITEMS_PER_PAGE) {
+                  chunks.push(items.slice(i, i + ITEMS_PER_PAGE));
+                }
 
-                  {/* Party & Quotation Info Row */}
-                  <div className="flex border-b border-black">
-                    <div className="w-1/2 p-3 border-r border-black flex flex-col gap-1.5 text-xs font-bold font-mono">
-                      <div className="flex">
-                        <span className="w-16 flex-shrink-0 text-slate-600">
-                          M/S:
-                        </span>{" "}
-                        <span className="uppercase text-sm leading-tight ml-2">
-                          {quotationPreviewData.quotation.partyId}
-                        </span>
-                      </div>
-                      <div className="flex">
-                        <span className="w-16 flex-shrink-0 text-slate-600">
-                          GST:
-                        </span>{" "}
-                        <span className="uppercase ml-2 leading-tight">
-                          {quotationPreviewData.partyDetails?.gstNumber ||
-                            "Unregistered"}
-                        </span>
-                      </div>
-                      <div className="flex">
-                        <span className="w-16 flex-shrink-0 text-slate-600">
-                          PAN:
-                        </span>{" "}
-                        <span className="uppercase ml-2 leading-tight">
-                          {quotationPreviewData.partyDetails?.panNumber || "-"}
-                        </span>
-                      </div>
-                      <div className="flex">
-                        <span className="w-16 flex-shrink-0 text-slate-600">
-                          Ph:
-                        </span>{" "}
-                        <span className="uppercase ml-2 leading-tight">
-                          {quotationPreviewData.partyDetails?.mobileNo || "-"}
-                        </span>
-                      </div>
-                      <div className="flex">
-                        <span className="w-16 flex-shrink-0 text-slate-600">
-                          Email:
-                        </span>{" "}
-                        <span className="ml-2 leading-tight truncate">
-                          {quotationPreviewData.partyDetails?.email || "-"}
-                        </span>
-                      </div>
-                      {quotationPreviewData.partyDetails?.address && (
-                        <div className="flex mt-1 text-[10px] text-slate-600 leading-tight">
-                          <span className="w-16 flex-shrink-0">ADD:</span>
-                          <span className="uppercase ml-2">
-                            {quotationPreviewData.partyDetails.address},{" "}
-                            {quotationPreviewData.partyDetails.city}
-                          </span>
+                return chunks.map((pageItems, pageIdx) => (
+                  <div
+                    key={pageIdx}
+                    id={pageIdx === 0 ? "invoice-content" : undefined}
+                    className="invoice-page w-[210mm] min-h-[297mm] bg-white text-black p-[10mm] shadow-md border border-slate-200 print:shadow-none print:border-none print:w-full font-sans text-sm mx-auto flex flex-col print:break-after-page"
+                  >
+                    <div className="border border-black flex flex-col h-full relative flex-1">
+                      {/* Header Row */}
+                      <div className="flex border-b border-black">
+                        <div className="w-1/3 p-4 flex flex-col items-center justify-center border-r border-black relative">
+                          {companySettings?.logoUrl ? (
+                            <img
+                              src={
+                                companySettings.logoUrl.startsWith("http")
+                                  ? companySettings.logoUrl
+                                  : `${window.location.origin}${companySettings.logoUrl}`
+                              }
+                              alt="Company Logo"
+                              className="max-h-20 max-w-full object-contain"
+                              crossOrigin="anonymous"
+                            />
+                          ) : (
+                            <>
+                              <h1 className="text-4xl font-black text-blue-900 tracking-tighter leading-none">
+                                {companySettings?.companyShortName || "JCRM"}
+                              </h1>
+                              <p className="text-xl font-bold text-blue-900 mt-1 whitespace-nowrap uppercase">
+                                {companySettings?.companyTagline ||
+                                  "COLD STORAGE"}
+                              </p>
+                            </>
+                          )}
                         </div>
-                      )}
-                    </div>
-                    <div className="w-1/2 p-3 flex flex-col gap-1.5 text-xs font-bold relative font-mono">
-                      <div className="absolute top-2 right-0 left-0 text-center font-black text-sm tracking-widest uppercase">
-                        QUOTATION / PROFORMA
+                        <div className="w-2/3 flex flex-col">
+                          <div className="bg-slate-200 font-bold text-center text-lg py-1 border-b border-black uppercase tracking-widest">
+                            {companySettings?.companyName ||
+                              "JCRM COLD STORAGE LLP"}
+                          </div>
+                          <div className="text-center p-2 text-[11px] leading-relaxed font-semibold">
+                            <p>{companySettings?.address || ""}</p>
+                            <p>
+                              Phone: {companySettings?.phone || ""} | Email:{" "}
+                              {companySettings?.email || ""}
+                            </p>
+                            <p className="mt-1 font-bold">
+                              GST: {companySettings?.gstNumber || ""}
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                      <div className="mt-6 flex flex-col gap-2 relative z-10">
-                        <div>ESTIMATE / PROFORMA</div>
-                        <div>SAC: {companySettings?.sacCode || "996721"}</div>
-                        <div>Quotation No: {quotationPreviewData.quotation.quotationNumber}</div>
-                        <div>Date: {quotationPreviewData.quotation.date}</div>
+
+                      {/* Party & Quotation Info Row */}
+                      <div className="flex border-b border-black">
+                        <div className="w-1/2 p-3 border-r border-black flex flex-col gap-1.5 text-xs font-bold font-mono text-left">
+                          <div className="flex">
+                            <span className="w-16 flex-shrink-0 text-slate-600">
+                              M/S:
+                            </span>{" "}
+                            <span className="uppercase text-sm leading-tight ml-2">
+                              {quotationPreviewData.partyDetails?.partyName || quotationPreviewData.quotation.partyId}
+                            </span>
+                          </div>
+                          <div className="flex">
+                            <span className="w-16 flex-shrink-0 text-slate-600">
+                              GST:
+                            </span>{" "}
+                            <span className="uppercase ml-2 leading-tight">
+                              {quotationPreviewData.partyDetails?.gstNumber ||
+                                "Unregistered"}
+                            </span>
+                          </div>
+                          <div className="flex">
+                            <span className="w-16 flex-shrink-0 text-slate-600">
+                              PAN:
+                            </span>{" "}
+                            <span className="uppercase ml-2 leading-tight">
+                              {quotationPreviewData.partyDetails?.panNumber ||
+                                "-"}
+                            </span>
+                          </div>
+                          <div className="flex">
+                            <span className="w-16 flex-shrink-0 text-slate-600">
+                              Ph:
+                            </span>{" "}
+                            <span className="uppercase ml-2 leading-tight">
+                              {quotationPreviewData.partyDetails?.mobileNo || "-"}
+                            </span>
+                          </div>
+                          <div className="flex">
+                            <span className="w-16 flex-shrink-0 text-slate-600">
+                              Email:
+                            </span>{" "}
+                            <span className="ml-2 leading-tight truncate uppercase">
+                              {quotationPreviewData.partyDetails?.email || "-"}
+                            </span>
+                          </div>
+                          {quotationPreviewData.partyDetails?.address && (
+                            <div className="flex mt-1 text-[10px] text-slate-600 leading-tight">
+                              <span className="w-16 flex-shrink-0">ADD:</span>
+                              <span className="uppercase ml-2">
+                                {quotationPreviewData.partyDetails.address},{" "}
+                                {quotationPreviewData.partyDetails.city}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="w-1/2 p-3 flex flex-col gap-1.5 text-xs font-bold relative font-mono text-left">
+                          <div className="absolute top-2 right-0 left-0 text-center font-black text-sm tracking-widest uppercase">
+                            TAX QUOTATION
+                          </div>
+                          <div className="mt-6 flex flex-col gap-2 relative z-10 uppercase">
+                            <div>CASH/CREDIT Memo</div>
+                            <div>
+                              SAC: {companySettings?.sacCode || "996721"}
+                            </div>
+                            <div>
+                              Quo No: {quotationPreviewData.quotation.quotationNumber}
+                            </div>
+                            <div className="text-[10px] text-slate-400 capitalize">
+                              Page {pageIdx + 1} of {chunks.length}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
 
-                  {/* Product Header */}
-                  <div className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] bg-neutral-50/50 border-y-2 border-slate-900 text-[10px] font-black uppercase text-center items-stretch h-10">
-                    <div className="px-2 flex items-center border-r border-slate-900 text-left">Product</div>
-                    <div className="px-1 flex items-center justify-center border-r border-slate-900">In Date</div>
-                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Out Date</div>
-                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Qty</div>
-                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Weight</div>
-                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Rem.</div>
-                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Price</div>
-                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Mon.</div>
-                    <div className="px-2 flex items-center justify-center">Amount</div>
-                  </div>
+                      {/* Product Header */}
+                      <div className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] bg-neutral-50/50 border-y-2 border-slate-900 text-[10px] font-black uppercase text-center items-stretch h-10">
+                        <div className="px-2 flex items-center border-r border-slate-900 text-left">
+                          Product
+                        </div>
+                        <div className="px-1 flex items-center justify-center border-r border-slate-900">
+                          In Date
+                        </div>
+                        <div className="px-1 flex items-center justify-center border-r border-slate-900">
+                          Out Date
+                        </div>
+                        <div className="px-1 flex items-center justify-center border-r border-slate-900">
+                          Qty
+                        </div>
+                        <div className="px-1 flex items-center justify-center border-r border-slate-900">
+                          Weight
+                        </div>
+                        <div className="px-1 flex items-center justify-center border-r border-slate-900">
+                          Rem.
+                        </div>
+                        <div className="px-1 flex items-center justify-center border-r border-slate-900">
+                          Price
+                        </div>
+                        <div className="px-1 flex items-center justify-center border-r border-slate-900">
+                          Mon.
+                        </div>
+                        <div className="px-2 flex items-center justify-center">
+                          Amount
+                        </div>
+                      </div>
 
-                  {/* Items Rows */}
-                  <div className="flex-1 border-b border-black font-semibold text-[10px] flex flex-col divide-y divide-black/20 min-h-[300px]">
-                    {quotationPreviewData.quotation.lineItems.map(
-                      (item: any, idx: number) => (
-                        <div
-                          key={idx}
-                          className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] text-center border-b border-black/20 items-stretch min-h-[32px]"
-                        >
+                      {/* Items Rows */}
+                      <div className="flex-1 border-b border-black font-semibold text-[10px] flex flex-col">
+                        {pageItems.map((item: any, idx: number) => (
                           <div
-                            className="px-2 py-1.5 text-left uppercase break-all border-r border-black/20 flex items-center"
-                            title={item.description}
+                            key={idx}
+                            className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] text-center border-b border-black/20 items-stretch min-h-[32px]"
                           >
-                            {item.description}
-                          </div>
-                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                            {item.inDate || "-"}
-                          </div>
-                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                            {item.outDate || quotationPreviewData.quotation.outwardDate || "-"}
-                          </div>
-                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                            {item.quantity}
-                          </div>
-                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                            {item.weight || item.quantity}
-                          </div>
-                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                            {item.remaining || 0}
-                          </div>
-                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                            {Number(item.rate).toFixed(2)}
-                          </div>
-                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                            {item.months || 1}
-                          </div>
-                          <div className="px-2 py-1.5 text-[10px] font-bold flex items-center justify-end">
-                            {Number(item.total).toFixed(2)}
-                          </div>
-                        </div>
-                      ),
-                    )}
-                    {/* Empty fill to stretch */}
-                    <div className="flex-1 grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] items-stretch">
-                      <div className="border-r border-black/20"></div>
-                      <div className="border-r border-black/20"></div>
-                      <div className="border-r border-black/20"></div>
-                      <div className="border-r border-black/20"></div>
-                      <div className="border-r border-black/20"></div>
-                      <div className="border-r border-black/20"></div>
-                      <div className="border-r border-black/20"></div>
-                      <div className="border-r border-black/20"></div>
-                      <div></div>
-                    </div>
-                  </div>
-
-                  {/* Totals & Remarks Row */}
-                  <div className="flex border-b border-black h-36">
-                    <div className="w-1/2 p-4 font-semibold text-xs border-r border-black flex flex-col gap-1.5 font-mono leading-tight bg-slate-50/30">
-                      <div className="flex">
-                        <span className="w-24 inline-block font-bold text-slate-500">
-                          Remarks :
-                        </span>{" "}
-                        <span className="text-black uppercase">
-                          {quotationPreviewData.quotation.remarks || "COLD RENT"}
-                        </span>
-                      </div>
-                      <div className="flex">
-                        <span className="w-24 inline-block font-bold text-slate-500">
-                          Bank Detail:
-                        </span>{" "}
-                        <span className="text-black uppercase">
-                          {companySettings?.bankName || "Canara Bank"}
-                        </span>
-                      </div>
-                      <div className="flex">
-                        <span className="w-24 inline-block font-bold text-slate-500">
-                          Branch:
-                        </span>{" "}
-                        <span className="text-black uppercase">
-                          {companySettings?.bankBranch || "Hazira"}
-                        </span>
-                      </div>
-                      <div className="flex">
-                        <span className="w-24 inline-block font-bold text-slate-500">
-                          A/C Number:
-                        </span>{" "}
-                        <span className="text-black font-black">
-                          {companySettings?.accountNumber || "120029409483"}
-                        </span>
-                      </div>
-                      <div className="flex">
-                        <span className="w-24 inline-block font-bold text-slate-500">
-                          IFSC Code:
-                        </span>{" "}
-                        <span className="text-black font-black uppercase">
-                          {companySettings?.ifscCode || "CNRB0003428"}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="w-1/2 flex flex-col font-bold text-xs p-4 font-mono justify-between bg-white">
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <span className="text-slate-500 font-bold uppercase tracking-tighter">
-                            Sub Total:
-                          </span>{" "}
-                          <span className="text-base text-black">
-                            ₹{quotationPreviewData.quotation.subTotal.toFixed(2)}
-                          </span>
-                        </div>
-                        {quotationPreviewData.quotation.taxTotal > 0 && (
-                          <>
-                            <div className="flex justify-between items-center">
-                              <span className="text-slate-500 font-bold uppercase tracking-tighter">
-                                SGST Total:
-                              </span>{" "}
-                              <span className="text-black">
-                                ₹
-                                {(quotationPreviewData.quotation.taxTotal / 2).toFixed(
-                                  2,
-                                )}
-                              </span>
+                            <div
+                              className="px-2 py-1.5 text-left uppercase break-all border-r border-black/20 flex items-center"
+                              title={item.description}
+                            >
+                              {item.description}
                             </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-slate-500 font-bold uppercase tracking-tighter">
-                                CGST Total:
-                              </span>{" "}
-                              <span className="text-black">
-                                ₹
-                                {(quotationPreviewData.quotation.taxTotal / 2).toFixed(
-                                  2,
-                                )}
-                              </span>
+                            <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                              {item.inDate || quotationPreviewData.quotation.date || "-"}
                             </div>
-                          </>
-                        )}
+                            <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                              {item.outDate ||
+                                quotationPreviewData.quotation.outwardDate ||
+                                "-"}
+                            </div>
+                            <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                              {item.quantity || 0}
+                            </div>
+                            <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                              {item.weight || 0}
+                            </div>
+                            <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                              {item.remainingQuantity || item.remaining || 0}
+                            </div>
+                            <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                              {Number(item.price || item.rate || 0).toFixed(2)}
+                            </div>
+                            <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                              {quotationPreviewData.quotation.storageMonths ||
+                                item.months ||
+                                1}
+                            </div>
+                            <div className="px-2 py-1.5 text-[10px] font-bold flex items-center justify-end">
+                              {Number(item.amount || item.total || 0).toFixed(
+                                2,
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                        {/* Empty fill to stretch */}
+                        <div className="flex-1 grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] items-stretch">
+                          <div className="border-r border-black/20"></div>
+                          <div className="border-r border-black/20"></div>
+                          <div className="border-r border-black/20"></div>
+                          <div className="border-r border-black/20"></div>
+                          <div className="border-r border-black/20"></div>
+                          <div className="border-r border-black/20"></div>
+                          <div className="border-r border-black/20"></div>
+                          <div className="border-r border-black/20"></div>
+                          <div></div>
+                        </div>
                       </div>
-                      <div className="flex justify-between items-center border-t border-black pt-2 mt-2 text-lg font-black bg-slate-900 text-white p-2 rounded-lg">
-                        <span className="uppercase tracking-tighter text-xs text-indigo-300">
-                          Net Amount:
-                        </span>
-                        <span>
-                          ₹{quotationPreviewData.quotation.grandTotal.toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* Words Row */}
-                  <div className="border-b border-black p-3 font-bold text-[11px] uppercase font-mono bg-slate-100 flex items-center gap-3">
-                    <span className="text-slate-500 font-black italic">
-                      Amount in words:
-                    </span>
-                    <span className="text-black">
-                      {numberToWords(quotationPreviewData.quotation.grandTotal)}
-                    </span>
-                  </div>
-
-                  {/* Terms & Signature */}
-                  <div className="flex h-32">
-                    <div className="w-2/3 p-3 text-[9px] font-medium border-r border-black flex flex-col justify-start text-slate-700 bg-white leading-relaxed">
-                      <p className="font-black mb-1 text-black uppercase tracking-widest border-b border-black/10 inline-block">
-                        Terms & Conditions:
-                      </p>
-                      {companySettings?.termsAndConditions &&
-                        companySettings.termsAndConditions.length > 0 ? (
-                        companySettings.termsAndConditions.map((term, idx) => (
-                          <p key={idx}>
-                            {idx + 1}. {term}
-                          </p>
-                        ))
-                      ) : (
+                      {/* Totals Row - ONLY ON LAST PAGE */}
+                      {pageIdx === chunks.length - 1 ? (
                         <>
-                          <p>
-                            1. This is a computer generated quotation and does not require physical signature.
-                          </p>
-                          <p>
-                            2. Rates are subject to change without notice.
-                          </p>
-                          <p>
-                            3. GST extra as applicable.
-                          </p>
-                          <p>4. Validity of this quotation is 7 days.</p>
-                        </>
-                      )}
-                    </div>
-                    <div className="w-1/3 flex flex-col justify-between items-center p-4 text-[11px] bg-slate-50/50">
-                      <div className="flex-1"></div>
-                      <div className="w-full border-t-2 border-slate-900 text-center font-black pt-2 uppercase tracking-tighter">
-                        {companySettings?.signatureLabel ||
-                          "Authorized Signatory"}
-                        <div className="text-[9px] font-bold text-slate-500 mt-1 capitalize">
-                          For{" "}
-                          {companySettings?.companyName ||
-                            "JCRM Cold Storage LLP"}
+                          <div className="flex border-b border-black h-36">
+                            <div className="w-1/2 p-4 font-semibold text-xs border-r border-black flex flex-col gap-1.5 font-mono leading-tight bg-slate-50/30 text-left">
+                              <div className="flex">
+                                <span className="w-24 inline-block font-bold text-slate-500">
+                                  Remarks :
+                                </span>{" "}
+                                <span className="text-black uppercase">
+                                  {quotationPreviewData.quotation.remarks ||
+                                    "COLD RENT"}
+                                </span>
+                              </div>
+                              <div className="flex">
+                                <span className="w-24 inline-block font-bold text-slate-500">
+                                  Bank Detail:
+                                </span>{" "}
+                                <span className="text-black uppercase tracking-tighter">
+                                  {companySettings?.bankName || "Canara Bank"}
+                                </span>
+                              </div>
+                              <div className="flex">
+                                <span className="w-24 inline-block font-bold text-slate-500">
+                                  Branch:
+                                </span>{" "}
+                                <span className="text-black uppercase">
+                                  {companySettings?.bankBranch || "Hazira"}
+                                </span>
+                              </div>
+                              <div className="flex">
+                                <span className="w-24 inline-block font-bold text-slate-500">
+                                  A/C Number:
+                                </span>{" "}
+                                <span className="text-black font-black">
+                                  {companySettings?.accountNumber ||
+                                    "120029409483"}
+                                </span>
+                              </div>
+                              <div className="flex">
+                                <span className="w-24 inline-block font-bold text-slate-500">
+                                  IFSC Code:
+                                </span>{" "}
+                                <span className="text-black font-black uppercase">
+                                  {companySettings?.ifscCode || "CNRB0003428"}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="w-1/2 flex flex-col font-bold text-xs p-4 font-mono justify-between bg-white text-right">
+                              <div className="space-y-2">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-slate-500 font-bold uppercase tracking-tighter">
+                                    Sub Total:
+                                  </span>{" "}
+                                  <span className="text-base text-black">
+                                    ₹
+                                    {Number(
+                                      quotationPreviewData.quotation.subTotal || 0,
+                                    ).toFixed(2)}
+                                  </span>
+                                </div>
+                                {(quotationPreviewData.quotation.taxTotal || 0) >
+                                  0 && (
+                                  <>
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-slate-500 font-bold uppercase tracking-tighter">
+                                        SGST Total:
+                                      </span>{" "}
+                                      <span className="text-black">
+                                        ₹
+                                        {Number(
+                                          (quotationPreviewData.quotation.taxTotal ||
+                                            0) / 2,
+                                        ).toFixed(2)}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-slate-500 font-bold uppercase tracking-tighter">
+                                        CGST Total:
+                                      </span>{" "}
+                                      <span className="text-black">
+                                        ₹
+                                        {Number(
+                                          (quotationPreviewData.quotation.taxTotal ||
+                                            0) / 2,
+                                        ).toFixed(2)}
+                                      </span>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                              <div className="flex justify-between items-center border-t border-black pt-2 mt-2 text-lg font-black bg-slate-900 text-white p-2 rounded-lg">
+                                <span className="uppercase tracking-tighter text-xs text-indigo-300">
+                                  Net Amount:
+                                </span>
+                                <span>
+                                  ₹
+                                  {Number(
+                                    quotationPreviewData.quotation.grandTotal || 0,
+                                  ).toFixed(2)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Words Row */}
+                          <div className="border-b border-black p-3 font-bold text-[11px] uppercase font-mono bg-slate-100 flex items-center gap-3 text-left">
+                            <span className="text-slate-500 font-black italic">
+                              Amount in words:
+                            </span>
+                            <span className="text-black">
+                              {numberToWords(
+                                Number(quotationPreviewData.quotation.grandTotal || 0),
+                              )}
+                            </span>
+                          </div>
+
+                          {/* Signature Row */}
+                          <div className="flex h-32">
+                            <div className="w-2/3 p-3 text-[9px] leading-relaxed border-r border-black flex flex-col justify-start text-slate-700 bg-white text-left">
+                              <p className="font-black mb-1 text-black uppercase tracking-widest border-b border-black/10 inline-block">
+                                Terms & Conditions:
+                              </p>
+                              {companySettings?.termsAndConditions &&
+                                companySettings.termsAndConditions.length > 0 ? (
+                                  companySettings.termsAndConditions.map(
+                                    (term, idx) => (
+                                      <p key={idx}>
+                                        {idx + 1}. {term}
+                                      </p>
+                                    ),
+                                  )
+                                ) : (
+                                  <>
+                                    <p>1. Stored at owner's risk.</p>
+                                    <p>2. Interest @24% p.a. if not paid within 7 days.</p>
+                                  </>
+                                )}
+                            </div>
+                            <div className="w-1/3 flex flex-col justify-end items-center p-4 text-[11px] bg-slate-50/50 relative">
+                              {(companySettings as any)?.signatureUrl && (
+                                <div className="absolute top-2 bottom-14 left-4 right-4 flex items-center justify-center pointer-events-none">
+                                  <img 
+                                    src={(companySettings as any).signatureUrl}
+                                    className="max-h-full max-w-full object-contain mix-blend-multiply"
+                                    crossOrigin="anonymous"
+                                  />
+                                </div>
+                              )}
+                              <div className="w-full border-t-2 border-slate-900 text-center font-black pt-2 uppercase tracking-tighter relative z-10">
+                                {companySettings?.signatureLabel ||
+                                  "Authorized Signatory"}
+                                <div className="text-[9px] font-bold text-slate-500 mt-1 capitalize">
+                                  For{" "}
+                                  {companySettings?.companyName ||
+                                    "JCRM Cold Storage LLP"}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                   </>
+                      ) : (
+                        <div className="flex-1 flex items-center justify-center border-b border-black bg-slate-50/30">
+                          <p className="text-xs font-black uppercase tracking-widest text-slate-400 italic">Continued on next page...</p>
                         </div>
+                      )}
+
+                      {/* Footer text */}
+                      <div className="absolute -bottom-6 w-full text-center text-[9px] font-bold text-slate-400 print:bottom-[-25px] uppercase tracking-widest">
+                        SUBJECT TO {companySettings?.jurisdiction || "SURAT"}{" "}
+                        JURISDICTION —{" "}
+                        {companySettings?.footerText ||
+                          "THIS IS A COMPUTER GENERATED DOCUMENT"}
                       </div>
                     </div>
                   </div>
-
-                  {/* Footer small text */}
-                  <div className="absolute -bottom-6 w-full text-center text-[9px] font-bold text-slate-400 print:bottom-[-25px] uppercase tracking-widest">
-                    SUBJECT TO {companySettings?.jurisdiction || "SURAT"}{" "}
-                    JURISDICTION —{" "}
-                    {companySettings?.footerText ||
-                      "THIS IS A COMPUTER GENERATED DOCUMENT"}
-                  </div>
-                </div>
-              </div>
+                ));
+              })()}
             </div>
-
             <style jsx global>{`
               @media print {
                 body * {
@@ -2072,19 +2393,24 @@ export default function QuotationPage() {
                 .print\\:max-h-none {
                   max-height: none !important;
                 }
-                #invoice-content,
-                #invoice-content * {
+                .print\\:break-after-page {
+                  break-after: page;
+                  page-break-after: always;
+                }
+                .invoice-page,
+                .invoice-page * {
                   visibility: visible;
                 }
-                #invoice-content {
-                  position: absolute !important;
+                .invoice-page {
+                  position: relative !important;
                   left: 0 !important;
                   top: 0 !important;
-                  width: 100% !important;
-                  height: 100% !important;
-                  padding: 0 !important;
+                  width: 210mm !important;
+                  height: 297mm !important;
+                  padding: 10mm !important;
                   margin: 0 !important;
                   border: none !important;
+                  box-shadow: none !important;
                 }
               }
             `}</style>
@@ -2092,5 +2418,6 @@ export default function QuotationPage() {
         </div>
       )}
     </div>
+    // </div>
   );
 }

@@ -13,13 +13,20 @@ import {
 } from "lucide-react";
 import { PackageMaster } from "@/app/lib/db";
 import { authFetch } from "@/app/lib/auth-fetch";
+import { useToast } from "@/app/_components/ToastProvider";
+import { useConfirm } from "@/app/_components/ConfirmProvider";
 
 export default function PackagePage() {
+  const { showToast } = useToast();
+  const confirm = useConfirm();
   const [packages, setPackages] = useState<PackageMaster[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const standardTypes = ["box", "bag", "packet", "bottle", "cane"];
+  const [isOtherSelected, setIsOtherSelected] = useState(false);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -64,6 +71,7 @@ export default function PackagePage() {
     if (pkg) {
       setEditingPackage(pkg);
       setFormData(pkg);
+      setIsOtherSelected(pkg.type ? !standardTypes.includes(pkg.type.toLowerCase()) : false);
     } else {
       setEditingPackage(null);
       setFormData({
@@ -72,6 +80,7 @@ export default function PackagePage() {
         weight: 0,
         unit: "kg",
       });
+      setIsOtherSelected(false);
     }
     setIsModalOpen(true);
   };
@@ -80,6 +89,7 @@ export default function PackagePage() {
     setIsModalOpen(false);
     setFormData({});
     setEditingPackage(null);
+    setIsOtherSelected(false);
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -100,29 +110,90 @@ export default function PackagePage() {
         fetchPackages();
       } else {
         const errorData = await res.json();
-        alert(`Failed to save: ${errorData.message || 'Unknown error'}`);
+        showToast('error', `Failed to save: ${errorData.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error("Failed to save:", error);
-      alert('Network error while saving package.');
+      showToast('error', 'Network error while saving package.');
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this packaging type?"))
-      return;
+    const confirmed = await confirm({
+      title: "Delete Packaging",
+      message:
+        "Are you sure you want to delete this packaging type? This action cannot be undone.",
+      type: "danger",
+      confirmText: "Delete Now",
+    });
+    if (!confirmed) return;
     try {
       const res = await authFetch(`/api/package/${id}`, { method: "DELETE" });
       if (res.ok) {
         fetchPackages();
+        const newSelected = new Set(selectedIds);
+        newSelected.delete(id);
+        setSelectedIds(newSelected);
       } else {
-        const data = await res.json();
-        alert(data.error || "Failed to delete");
+        const errorData = await res.json();
+        showToast(
+          "error",
+          `Failed to delete packaging: ${errorData.message || "Unknown error"}`,
+        );
       }
     } catch (error) {
       console.error("Failed to delete:", error);
-      alert('Network error while deleting package.');
+      showToast("error", "Network error while deleting packaging.");
     }
+  };
+
+  const handleBulkDeletePackages = async () => {
+    const count = selectedIds.size;
+    if (count === 0) return;
+
+    const confirmed = await confirm({
+      title: 'Bulk Delete Packaging',
+      message: `Are you sure you want to delete ${count} selected packaging types? This action cannot be undone.`,
+      type: 'danger',
+      confirmText: `Delete ${count} Items`
+    });
+
+    if (!confirmed) return;
+
+    try {
+      const res = await authFetch('/api/package/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+
+      if (res.ok) {
+        showToast('success', `${count} items deleted successfully`);
+        setSelectedIds(new Set());
+        fetchPackages();
+      } else {
+        const errorData = await res.json();
+        showToast('error', errorData.error || 'Failed to bulk delete');
+      }
+    } catch (error) {
+      console.error('Bulk delete error:', error);
+      showToast('error', 'Network error during bulk delete');
+    }
+  };
+
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedIds(new Set(packages.map(p => p.id)));
+    } else {
+      setSelectedIds(new Set());
+    }
+  };
+
+  const handleSelectRow = (id: string) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) newSelected.delete(id);
+    else newSelected.add(id);
+    setSelectedIds(newSelected);
   };
 
   const totalPages = Math.ceil(total / pageSize);
@@ -186,6 +257,15 @@ export default function PackagePage() {
                 className="block w-full pl-10 pr-3 py-2 border border-neutral-200 dark:border-neutral-700 rounded-lg bg-neutral-50 dark:bg-neutral-800 text-sm placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow"
               />
             </div>
+            {selectedIds.size > 0 && (
+              <button
+                onClick={handleBulkDeletePackages}
+                className="flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-sm bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20 transition-all active:scale-95 border border-rose-100 dark:border-rose-500/20 shadow-sm"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete ({selectedIds.size})</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -195,6 +275,14 @@ export default function PackagePage() {
             <table className="min-w-full divide-y divide-neutral-200 dark:divide-neutral-800">
               <thead className="bg-neutral-50 dark:bg-neutral-800/50">
                 <tr>
+                  <th scope="col" className="px-6 py-4 text-left">
+                    <input
+                      type="checkbox"
+                      className="rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                      checked={packages.length > 0 && selectedIds.size === packages.length}
+                      onChange={handleSelectAll}
+                    />
+                  </th>
                   <th
                     scope="col"
                     className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider"
@@ -231,7 +319,7 @@ export default function PackagePage() {
                 {packages.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={4}
+                      colSpan={6}
                       className="px-6 py-12 text-center text-sm text-neutral-500"
                     >
                       <div className="flex flex-col items-center justify-center">
@@ -240,7 +328,7 @@ export default function PackagePage() {
                           No Packaging Types Found
                         </p>
                         <p className="mt-1">
-                          Add your standard boxes, bags, or other containers.
+                          Add your first packaging type to get started.
                         </p>
                       </div>
                     </td>
@@ -251,6 +339,14 @@ export default function PackagePage() {
                       key={pkg.id}
                       className="hover:bg-neutral-50/50 dark:hover:bg-neutral-800/50 transition-colors group"
                     >
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(pkg.id)}
+                          onChange={() => handleSelectRow(pkg.id)}
+                          className="rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                        />
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-neutral-900 dark:text-neutral-100 capitalize">
                         {pkg.type}
                       </td>
@@ -379,11 +475,17 @@ export default function PackagePage() {
                 </label>
                 <select
                   required
-                  value={formData.type || ""}
-                  onChange={(e) =>
-                    setFormData({ ...formData, type: e.target.value })
-                  }
-                  className="w-full px-3 py-2 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:ring-2 focus:ring-indigo-500 transition-all"
+                  value={isOtherSelected ? "other" : formData.type || ""}
+                  onChange={(e) => {
+                    if (e.target.value === "other") {
+                      setIsOtherSelected(true);
+                      setFormData({ ...formData, type: "" });
+                    } else {
+                      setIsOtherSelected(false);
+                      setFormData({ ...formData, type: e.target.value });
+                    }
+                  }}
+                  className="w-full px-3 py-2 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:ring-2 focus:ring-indigo-500 transition-all capitalize"
                 >
                   <option value="">Select Type</option>
                   <option value="box">Box</option>
@@ -391,7 +493,29 @@ export default function PackagePage() {
                   <option value="packet">Packet</option>
                   <option value="bottle">Bottle</option>
                   <option value="cane">Cane</option>
+                  <option value="other">Other (Custom)</option>
                 </select>
+
+                {isOtherSelected && (
+                  <div className="mt-3 space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 ml-1">
+                      Custom Packing Name
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Describe your custom type (e.g. Drum, Crate, Jar)"
+                      value={formData.type || ""}
+                      onChange={(e) =>
+                        setFormData({ ...formData, type: e.target.value })
+                      }
+                      className="w-full px-4 py-2 bg-indigo-50/30 dark:bg-indigo-500/5 border border-indigo-100 dark:border-indigo-500/20 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:bg-white dark:focus:bg-neutral-950 transition-all text-sm"
+                    />
+                    <p className="text-[10px] text-neutral-400 italic ml-1 flex items-center gap-1">
+                      <Plus className="w-3 h-3" /> This will be added as a custom packaging entry
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">

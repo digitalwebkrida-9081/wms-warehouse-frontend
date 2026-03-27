@@ -4,13 +4,18 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Search, MoreVertical, Edit2, Trash2, ChevronLeft, ChevronRight, Tags } from 'lucide-react';
 import { Category } from '@/app/lib/db';
 import { authFetch } from '@/app/lib/auth-fetch';
+import { useToast } from '@/app/_components/ToastProvider';
+import { useConfirm } from '@/app/_components/ConfirmProvider';
 
 export default function CategoryPage() {
+  const { showToast } = useToast();
+  const confirm = useConfirm();
   const [categories, setCategories] = useState<Category[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -86,28 +91,86 @@ export default function CategoryPage() {
         fetchCategories();
       } else {
         const errorData = await res.json();
-        alert(`Failed to save: ${errorData.message || 'Unknown error'}`);
+        showToast('error', `Failed to save: ${errorData.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to save:', error);
-      alert('Network error while saving category.');
+      showToast('error', 'Network error while saving category.');
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this category?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Category',
+      message: 'Are you sure you want to delete this category? This will affect all associated products.',
+      type: 'danger',
+      confirmText: 'Delete Category'
+    });
+    if (!confirmed) return;
     try {
       const res = await authFetch(`/api/category/${id}`, { method: 'DELETE' });
       if (res.ok) {
         fetchCategories();
+        const newSelected = new Set(selectedIds);
+        newSelected.delete(id);
+        setSelectedIds(newSelected);
       } else {
         const errorData = await res.json();
-        alert(`Failed to delete: ${errorData.message || 'Unknown error'}`);
+        showToast('error', `Failed to delete category: ${errorData.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to delete:', error);
-      alert('Network error while deleting category.');
+      showToast('error', 'Network error while deleting category.');
     }
+  };
+
+  const handleBulkDeleteCategories = async () => {
+    const count = selectedIds.size;
+    if (count === 0) return;
+
+    const confirmed = await confirm({
+      title: 'Bulk Delete Categories',
+      message: `Are you sure you want to delete ${count} selected categories? This cannot be undone.`,
+      type: 'danger',
+      confirmText: `Delete ${count} Categories`
+    });
+
+    if (!confirmed) return;
+
+    try {
+      const res = await authFetch('/api/category/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+
+      if (res.ok) {
+        showToast('success', `${count} categories deleted successfully`);
+        setSelectedIds(new Set());
+        fetchCategories();
+      } else {
+        const errorData = await res.json();
+        showToast('error', errorData.error || 'Failed to bulk delete');
+      }
+    } catch (error) {
+      console.error('Bulk delete error:', error);
+      showToast('error', 'Network error during bulk delete');
+    }
+  };
+
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedIds(new Set(categories.map(c => c.id)));
+    } else {
+      setSelectedIds(new Set());
+    }
+  };
+
+  const handleSelectRow = (id: string) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) newSelected.delete(id);
+    else newSelected.add(id);
+    setSelectedIds(newSelected);
   };
 
   const totalPages = Math.ceil(total / pageSize);
@@ -166,6 +229,15 @@ export default function CategoryPage() {
                 className="block w-full pl-10 pr-3 py-2 border border-neutral-200 dark:border-neutral-700 rounded-lg bg-neutral-50 dark:bg-neutral-800 text-sm placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow"
               />
             </div>
+            {selectedIds.size > 0 && (
+              <button
+                onClick={handleBulkDeleteCategories}
+                className="flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-sm bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20 transition-all active:scale-95 border border-rose-100 dark:border-rose-500/20 shadow-sm"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete ({selectedIds.size})</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -175,6 +247,14 @@ export default function CategoryPage() {
             <table className="min-w-full divide-y divide-neutral-200 dark:divide-neutral-800">
               <thead className="bg-neutral-50 dark:bg-neutral-800/50">
                 <tr>
+                  <th scope="col" className="px-6 py-4 text-left">
+                    <input
+                      type="checkbox"
+                      className="rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                      checked={categories.length > 0 && selectedIds.size === categories.length}
+                      onChange={handleSelectAll}
+                    />
+                  </th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Category</th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Description</th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Life In Months</th>
@@ -185,40 +265,48 @@ export default function CategoryPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 bg-white dark:bg-neutral-900">
-                {categories.length === 0 ? (
+                  {categories.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-sm text-neutral-500">
+                    <td colSpan={8} className="px-6 py-12 text-center text-sm text-neutral-500">
                       <div className="flex flex-col items-center justify-center">
                         <Tags className="w-12 h-12 text-neutral-300 dark:text-neutral-600 mb-4" />
                         <p className="text-lg font-medium text-neutral-900 dark:text-neutral-100">No Categories Found</p>
-                        <p className="mt-1">Define your first category to organize your inventory.</p>
+                        <p className="mt-1">Add your first category to get started.</p>
                       </div>
                     </td>
                   </tr>
                 ) : (
-                  categories.map((cat) => (
-                    <tr key={cat.id} className="hover:bg-neutral-50/50 dark:hover:bg-neutral-800/50 transition-colors group">
+                  categories.map((category) => (
+                    <tr key={category.id} className="hover:bg-neutral-50/50 dark:hover:bg-neutral-800/50 transition-colors group">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(category.id)}
+                          onChange={() => handleSelectRow(category.id)}
+                          className="rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                        />
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                        {cat.name}
+                        {category.name}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
-                        {cat.description || '-'}
+                        {category.description || '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
-                        {cat.lifeInMonths} months
+                        {category.lifeInMonths} months
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
-                        {cat.lotType}
+                        {category.lotType}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
-                        {cat.hsnCode || '-'}
+                        {category.hsnCode || '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border shadow-[inset_0_1px_2px_rgba(0,0,0,0.1)]
-                          ${cat.status === 'Active' 
+                          ${category.status === 'Active' 
                             ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20'
                             : 'bg-neutral-100 text-neutral-600 border-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:border-neutral-700'}`}>
-                          {cat.status}
+                          {category.status}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
@@ -229,13 +317,13 @@ export default function CategoryPage() {
                           <div className="absolute right-0 top-full mt-1 w-32 bg-white dark:bg-neutral-900 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-800 opacity-0 invisible group-hover/menu:opacity-100 group-hover/menu:visible peer-focus:opacity-100 peer-focus:visible transition-all z-20">
                             <div className="py-1">
                               <button
-                                onClick={() => handleOpenModal(cat)}
+                                onClick={() => handleOpenModal(category)}
                                 className="w-full text-left px-4 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 flex items-center gap-2"
                               >
                                 <Edit2 className="w-4 h-4" /> Edit
                               </button>
                               <button
-                                onClick={() => handleDelete(cat.id)}
+                                onClick={() => handleDelete(category.id)}
                                 className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2"
                               >
                                 <Trash2 className="w-4 h-4" /> Delete

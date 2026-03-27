@@ -5,6 +5,33 @@ import { useRouter } from 'next/navigation';
 import { Plus, Search, MoreVertical, Edit2, Trash2, ArrowRightCircle, FileText, CheckCircle2, ChevronLeft, ChevronRight, Download, X, Calculator, Printer, FileDown } from 'lucide-react';
 import { Inward } from '@/app/lib/db';
 import { authFetch } from '@/app/lib/auth-fetch';
+import { useToast } from '@/app/_components/ToastProvider';
+import { useConfirm } from '@/app/_components/ConfirmProvider';
+
+interface CompanySettings {
+  companyName: string;
+  companyShortName: string;
+  companyTagline: string;
+  logoUrl: string;
+  address: string;
+  city: string;
+  state: string;
+  pincode: string;
+  phone: string;
+  email: string;
+  gstNumber: string;
+  panNumber: string;
+  sacCode: string;
+  bankName: string;
+  bankBranch: string;
+  accountNumber: string;
+  ifscCode: string;
+  termsAndConditions: string[];
+  jurisdiction: string;
+  signatureLabel: string;
+  signatureUrl: string;
+  footerText: string;
+}
 
 export default function InwardsPage({
   params,
@@ -13,6 +40,8 @@ export default function InwardsPage({
   params: Promise<any>;
   searchParams: Promise<any>;
 }) {
+  const { showToast } = useToast();
+  const confirm = useConfirm();
   const router = useRouter();
   const [inwards, setInwards] = useState<Inward[]>([]);
   const [parties, setParties] = useState<{id: string, name: string}[]>([]);
@@ -38,6 +67,25 @@ export default function InwardsPage({
     gst: 18,
     outwardDate: new Date().toISOString().split('T')[0],
   });
+
+  // Company Settings State
+  const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
+
+  const fetchCompanySettings = useCallback(async () => {
+    try {
+      const res = await authFetch("/api/settings");
+      if (res.ok) {
+        const data = await res.json();
+        setCompanySettings(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch company settings:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCompanySettings();
+  }, [fetchCompanySettings]);
 
   const fetchParties = useCallback(async () => {
     try {
@@ -157,16 +205,22 @@ export default function InwardsPage({
         fetchInwards();
       } else {
         const errorData = await res.json();
-        alert(`Failed to save inward: ${errorData.message || errorData.error || 'Unknown error'}`);
+        showToast('error', `Failed to save inward: ${errorData.message || errorData.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to save:', error);
-      alert('Network error while saving inward.');
+      showToast('error', 'Network error while saving inward.');
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this inward?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Inward',
+      message: 'Are you sure you want to delete this inward record? This action cannot be undone.',
+      type: 'danger',
+      confirmText: 'Delete Now'
+    });
+    if (!confirmed) return;
     try {
       const res = await authFetch(`/api/inwards/${id}`, { method: 'DELETE' });
       if (res.ok) {
@@ -176,11 +230,45 @@ export default function InwardsPage({
         setSelectedIds(newSelected);
       } else {
         const errorData = await res.json();
-        alert(`Failed to delete inward: ${errorData.message || errorData.error || 'Unknown error'}`);
+        showToast('error', `Failed to delete inward: ${errorData.message || errorData.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to delete:', error);
-      alert('Network error while deleting inward.');
+      showToast('error', 'Network error while deleting inward.');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    const count = selectedIds.size;
+    if (count === 0) return;
+
+    const confirmed = await confirm({
+      title: 'Bulk Delete Inwards',
+      message: `Are you sure you want to delete ${count} selected records? This action cannot be undone and may affect billing.`,
+      type: 'danger',
+      confirmText: `Delete ${count} Items`
+    });
+
+    if (!confirmed) return;
+
+    try {
+      const res = await authFetch('/api/inwards/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+
+      if (res.ok) {
+        showToast('success', `${count} records deleted successfully`);
+        setSelectedIds(new Set());
+        fetchInwards();
+      } else {
+        const errorData = await res.json();
+        showToast('error', errorData.error || 'Failed to bulk delete');
+      }
+    } catch (error) {
+      console.error('Bulk delete error:', error);
+      showToast('error', 'Network error during bulk delete');
     }
   };
 
@@ -211,12 +299,13 @@ export default function InwardsPage({
       setIsBillParamsModalOpen(false);
       setSelectedIds(new Set());
       fetchInwards();
+      showToast('success', 'Bill generated successfully!');
       
       // Show Invoice Preview
       setInvoicePreviewData(data);
     } catch (error: any) {
       console.error('Failed to generate bill:', error);
-      alert(`Error generating bill: ${error.message}`);
+      showToast('error', `Error generating bill: ${error.message}`);
     }
   };
 
@@ -248,15 +337,92 @@ export default function InwardsPage({
       pdf.save(`Invoice_${invoicePreviewData?.bill?.billNumber}.pdf`);
     } catch (e) {
       console.error('Failed to generate PDF:', e);
-      alert('Could not download PDF. Please try printing to PDF instead.');
+      showToast('error', 'Could not download PDF. Please try printing to PDF instead.');
     }
   };
 
-  // Convert number to words roughly for Indian currency
   const numberToWords = (num: number) => {
-    if (num === 0) return "Zero";
-    // simplified implementation for presentation
-    return `${num.toLocaleString('en-IN')} Only`;
+    if (num === 0) return "Zero Only";
+
+    const ones = [
+      "",
+      "One",
+      "Two",
+      "Three",
+      "Four",
+      "Five",
+      "Six",
+      "Seven",
+      "Eight",
+      "Nine",
+      "Ten",
+      "Eleven",
+      "Twelve",
+      "Thirteen",
+      "Fourteen",
+      "Fifteen",
+      "Sixteen",
+      "Seventeen",
+      "Eighteen",
+      "Nineteen",
+    ];
+    const tens = [
+      "",
+      "",
+      "Twenty",
+      "Thirty",
+      "Forty",
+      "Fifty",
+      "Sixty",
+      "Seventy",
+      "Eighty",
+      "Ninety",
+    ];
+
+    function convertSection(n: number): string {
+      if (n === 0) return "";
+      if (n < 20) return ones[n];
+      if (n < 100)
+        return (
+          tens[Math.floor(n / 10)] + (n % 10 !== 0 ? " " + ones[n % 10] : "")
+        );
+      return (
+        ones[Math.floor(n / 100)] +
+        " Hundred" +
+        (n % 100 !== 0 ? " and " + convertSection(n % 100) : "")
+      );
+    }
+
+    const main = Math.floor(num);
+    const fraction = Math.round((num - main) * 100);
+
+    let result = "";
+    let n = main;
+
+    if (n >= 10000000) {
+      result += convertSection(Math.floor(n / 10000000)) + " Crore ";
+      n %= 10000000;
+    }
+    if (n >= 100000) {
+      result += convertSection(Math.floor(n / 100000)) + " Lakh ";
+      n %= 100000;
+    }
+    if (n >= 1000) {
+      result += convertSection(Math.floor(n / 1000)) + " Thousand ";
+      n %= 1000;
+    }
+    if (n > 0) {
+      result += convertSection(n);
+    }
+
+    if (result.trim() === "") result = "Zero";
+    result = result.trim() + " Rupees";
+
+    if (fraction > 0) {
+      result += " and " + convertSection(fraction) + " Paisa";
+    }
+
+    return result + " Only";
   };
 
   const totalPages = Math.ceil(total / pageSize);
@@ -319,6 +485,16 @@ export default function InwardsPage({
               />
             </div>
             
+            {selectedIds.size > 0 && (
+              <button
+                onClick={handleBulkDelete}
+                className="flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-sm bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20 transition-all active:scale-95 border border-rose-100 dark:border-rose-500/20 shadow-sm shadow-rose-500/10"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete ({selectedIds.size})</span>
+              </button>
+            )}
+
             <button
               onClick={handleGenerateBill}
               disabled={selectedIds.size === 0}
@@ -329,11 +505,6 @@ export default function InwardsPage({
             >
               <FileText className="w-4 h-4" />
               <span>Generate Bill</span>
-              {selectedIds.size > 0 && (
-                <span className="bg-indigo-600 text-white text-xs px-2 py-0.5 rounded-full ml-2">
-                  {selectedIds.size}
-                </span>
-              )}
             </button>
           </div>
         </div>
@@ -737,7 +908,6 @@ export default function InwardsPage({
       {invoicePreviewData && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm print:bg-white print:z-auto print:block print:relative print:p-0 p-4">
           <div className="flex flex-col max-h-[95vh] w-full max-w-5xl bg-slate-100 rounded-lg shadow-2xl relative print:h-auto print:max-h-none print:shadow-none print:bg-white">
-            
             {/* Modal Header controls (Hidden on Print) */}
             <div className="flex justify-between items-center p-4 bg-white border-b print:hidden rounded-t-lg">
               <h2 className="text-xl font-bold flex items-center gap-2">
@@ -745,16 +915,25 @@ export default function InwardsPage({
                 Invoice Preview
               </h2>
               <div className="flex items-center gap-3">
-                <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold rounded-lg transition-colors">
+                <button
+                  onClick={handlePrint}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold rounded-lg transition-colors"
+                >
                   <Printer className="w-4 h-4" />
                   Print Invoice
                 </button>
-                <button onClick={handleDownloadPDF} className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white hover:bg-slate-700 font-bold rounded-lg transition-colors">
+                <button
+                  onClick={handleDownloadPDF}
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white hover:bg-slate-700 font-bold rounded-lg transition-colors"
+                >
                   <FileDown className="w-4 h-4" />
                   Download PDF
                 </button>
                 <div className="w-px h-6 bg-slate-200 mx-2"></div>
-                <button onClick={() => setInvoicePreviewData(null)} className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 rounded-full transition-colors">
+                <button
+                  onClick={() => setInvoicePreviewData(null)}
+                  className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 rounded-full transition-colors"
+                >
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -762,26 +941,50 @@ export default function InwardsPage({
 
             {/* A4 Printable Area */}
             <div className="flex-1 overflow-auto p-4 print:p-0 print:overflow-visible custom-scrollbar flex justify-center">
-              <div id="invoice-content" className="w-[210mm] min-h-[297mm] bg-white text-black p-[10mm] shadow-md border border-slate-200 print:shadow-none print:border-none print:w-full font-sans text-sm mx-auto">
+              <div
+                id="invoice-content"
+                className="w-[210mm] min-h-[297mm] bg-white text-black p-[10mm] shadow-md border border-slate-200 print:shadow-none print:border-none print:w-full font-sans text-sm mx-auto"
+              >
                 <div className="border border-black flex flex-col h-full relative">
-                  
                   {/* Header Row */}
                   <div className="flex border-b border-black">
                     <div className="w-1/3 p-4 flex flex-col items-center justify-center border-r border-black relative">
-                      <h1 className="text-4xl font-black text-blue-900 tracking-tighter leading-none">JCRM</h1>
-                      <p className="text-xl font-bold text-blue-900 mt-1 whitespace-nowrap">COLD STORAGE</p>
-                      <div className="absolute right-4 top-4 text-blue-900 opacity-20">
-                        <svg className="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M11.996 0l1.29 2.585-2.88 1.666 4.316 4.315-1.554 2.686-3.804-3.805v2.873h-1.928v-2.873l-3.805 3.805-1.554-2.686 4.316-4.315-2.88-1.666L4.78 0h7.216zm8.85 4l1.154 2.015-3.328 1.92L23 12l-.993 1.722-4.32-4.32-1.84 3.193 5.432 5.432-1.72 1-5.433-5.432v6.33h-1.99v-6.33L6.697 19.03l-1.72-1 5.432-5.432-1.84-3.193-4.32 4.32L3.256 12l4.33-4.33-1.802-3.12-3.328-1.921L3.903 0h16.195l-1.155 2.015-3.327 1.921 4.316 4.315-1.554 2.686-3.805-3.8051-3.804 3.805-1.554-2.686 4.316-4.315-3.328-1.92zM12 24l1.29-2.585-2.88-1.665 4.316-4.316-1.554-2.686-3.804 3.805v-2.874h-1.928v2.874l-3.805-3.805-1.554 2.686 4.316 4.316-2.88 1.665L12 24z"/></svg>
-                      </div>
+                      {companySettings?.logoUrl ? (
+                        <img
+                          src={
+                            companySettings.logoUrl.startsWith("http")
+                              ? companySettings.logoUrl
+                              : `${window.location.origin}${companySettings.logoUrl}`
+                          }
+                          alt="Company Logo"
+                          className="max-h-20 max-w-full object-contain"
+                          crossOrigin="anonymous"
+                        />
+                      ) : (
+                        <>
+                          <h1 className="text-4xl font-black text-blue-900 tracking-tighter leading-none">
+                            {companySettings?.companyShortName || "JCRM"}
+                          </h1>
+                          <p className="text-xl font-bold text-blue-900 mt-1 whitespace-nowrap uppercase">
+                            {companySettings?.companyTagline || "COLD STORAGE"}
+                          </p>
+                        </>
+                      )}
                     </div>
                     <div className="w-2/3 flex flex-col">
                       <div className="bg-slate-200 font-bold text-center text-lg py-1 border-b border-black uppercase tracking-widest">
-                        JCRM COLD STORAGE LLP
+                        {companySettings?.companyName ||
+                          "JCRM COLD STORAGE LLP"}
                       </div>
                       <div className="text-center p-2 text-[11px] leading-relaxed font-semibold">
-                        <p>BESIDE PRIMARY SCHOOL, OLD HALPATI VAS & ISHANPOR GRAM, OLPAD ROAD, PIN – 394540</p>
-                        <p>Phone: 8128299220 | Email: jcrmcoldstorage1@gmail.com</p>
-                        <p className="mt-1 font-bold">GST: 24AAUFJ0917F1ZD</p>
+                        <p>{companySettings?.address || ""}</p>
+                        <p>
+                          Phone: {companySettings?.phone || ""} | Email:{" "}
+                          {companySettings?.email || ""}
+                        </p>
+                        <p className="mt-1 font-bold">
+                          GST: {companySettings?.gstNumber || ""}
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -789,129 +992,307 @@ export default function InwardsPage({
                   {/* Party & Bill Info Row */}
                   <div className="flex border-b border-black">
                     <div className="w-1/2 p-3 border-r border-black flex flex-col gap-1.5 text-xs font-bold font-mono">
-                      <div className="flex"><span className="w-16 flex-shrink-0 text-slate-600">M/S:</span> <span className="uppercase text-sm leading-tight ml-2">{invoicePreviewData.bill.partyId}</span></div>
-                      <div className="flex"><span className="w-16 flex-shrink-0 text-slate-600">GST:</span> <span className="uppercase ml-2 leading-tight">{invoicePreviewData.partyDetails?.gstNumber || 'Unregistered'}</span></div>
-                      <div className="flex"><span className="w-16 flex-shrink-0 text-slate-600">PAN:</span> <span className="uppercase ml-2 leading-tight">{invoicePreviewData.partyDetails?.panNumber || '-'}</span></div>
-                      <div className="flex"><span className="w-16 flex-shrink-0 text-slate-600">Ph:</span> <span className="uppercase ml-2 leading-tight">{invoicePreviewData.partyDetails?.mobileNo || '-'}</span></div>
-                      <div className="flex"><span className="w-16 flex-shrink-0 text-slate-600">Email:</span> <span className="ml-2 leading-tight truncate">{invoicePreviewData.partyDetails?.email || '-'}</span></div>
+                      <div className="flex">
+                        <span className="w-16 flex-shrink-0 text-slate-600">
+                          M/S:
+                        </span>{" "}
+                        <span className="uppercase text-sm leading-tight ml-2">
+                          {invoicePreviewData.bill.partyId}
+                        </span>
+                      </div>
+                      <div className="flex">
+                        <span className="w-16 flex-shrink-0 text-slate-600">
+                          GST:
+                        </span>{" "}
+                        <span className="uppercase ml-2 leading-tight">
+                          {invoicePreviewData.partyDetails?.gstNumber ||
+                            "Unregistered"}
+                        </span>
+                      </div>
+                      <div className="flex">
+                        <span className="w-16 flex-shrink-0 text-slate-600">
+                          PAN:
+                        </span>{" "}
+                        <span className="uppercase ml-2 leading-tight">
+                          {invoicePreviewData.partyDetails?.panNumber || "-"}
+                        </span>
+                      </div>
+                      <div className="flex">
+                        <span className="w-16 flex-shrink-0 text-slate-600">
+                          Ph:
+                        </span>{" "}
+                        <span className="uppercase ml-2 leading-tight">
+                          {invoicePreviewData.partyDetails?.mobileNo || "-"}
+                        </span>
+                      </div>
+                      <div className="flex">
+                        <span className="w-16 flex-shrink-0 text-slate-600">
+                          Email:
+                        </span>{" "}
+                        <span className="ml-2 leading-tight truncate">
+                          {invoicePreviewData.partyDetails?.email || "-"}
+                        </span>
+                      </div>
                       {invoicePreviewData.partyDetails?.address && (
                         <div className="flex mt-1 text-[10px] text-slate-600 leading-tight">
                           <span className="w-16 flex-shrink-0">ADD:</span>
-                          <span className="uppercase ml-2">{invoicePreviewData.partyDetails.address}, {invoicePreviewData.partyDetails.city}</span>
+                          <span className="uppercase ml-2">
+                            {invoicePreviewData.partyDetails.address},{" "}
+                            {invoicePreviewData.partyDetails.city}
+                          </span>
                         </div>
                       )}
                     </div>
                     <div className="w-1/2 p-3 flex flex-col gap-1.5 text-xs font-bold relative font-mono">
-                      <div className="absolute top-2 right-0 left-0 text-center font-black text-sm tracking-widest uppercase">TAX INVOICE</div>
+                      <div className="absolute top-2 right-0 left-0 text-center font-black text-sm tracking-widest uppercase">
+                        TAX INVOICE
+                      </div>
                       <div className="mt-6 flex flex-col gap-2 relative z-10">
                         <div>CASH/CREDIT Memo</div>
-                        <div>SAC: 996721</div>
+                        <div>SAC: {companySettings?.sacCode || "996721"}</div>
                         <div>Bill No: {invoicePreviewData.bill.billNumber}</div>
-                        <div>Date: {invoicePreviewData.bill.date}</div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Items Table Header */}
-                  <div className="grid grid-cols-[3fr_1.5fr_1.5fr_1fr_1.5fr_1.5fr_1.5fr_1.2fr_2fr] border-b border-black bg-slate-100 font-bold text-[10px] uppercase text-center child-border-r divide-x divide-black">
-                    <div className="p-2 text-left">Product</div>
-                    <div className="p-2">In Date</div>
-                    <div className="p-2">Out Date</div>
-                    <div className="p-2">Qty</div>
-                    <div className="p-2">Weight</div>
-                    <div className="p-2">Remaining</div>
-                    <div className="p-2">Price</div>
-                    <div className="p-2">Months</div>
-                    <div className="p-2 text-right">Amount</div>
+                  {/* Product Header */}
+                  <div className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] bg-neutral-50/50 border-y-2 border-slate-900 text-[10px] font-black uppercase text-center items-stretch h-10">
+                    <div className="px-2 flex items-center border-r border-slate-900 text-left">Product</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">In Date</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Out Date</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Qty</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Weight</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Rem.</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Price</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Mon.</div>
+                    <div className="px-2 flex items-center justify-center">Amount</div>
                   </div>
 
                   {/* Items Rows */}
-                  <div className="flex-1 border-b border-black font-semibold text-[10px] flex flex-col divide-y divide-black/20">
-                    {invoicePreviewData.bill.lineItems.map((item: any, idx: number) => (
-                      <div key={idx} className="grid grid-cols-[3fr_1.5fr_1.5fr_1fr_1.5fr_1.5fr_1.5fr_1.2fr_2fr] text-center divide-x divide-black/40 min-h-[28px] py-1 items-center">
-                        <div className="px-2 text-left truncate uppercase" title={item.description}>{item.description}</div>
-                        <div className="px-2">{item.inDate || '-'}</div>
-                        <div className="px-2">{item.outDate || invoicePreviewData.bill.outwardDate || '-'}</div>
-                        <div className="px-2">{item.quantity}</div>
-                        <div className="px-2">{item.weight}</div>
-                        <div className="px-2">{item.remaining}</div>
-                        <div className="px-2 text-right">{item.rate.toFixed(2)}</div>
-                        <div className="px-2">{item.months}</div>
-                        <div className="px-2 text-right">{((item.weight * item.rate * item.months)).toFixed(2)}</div>
-                      </div>
-                    ))}
+                  <div className="flex-1 border-b border-black font-semibold text-[10px] flex flex-col min-h-[300px]">
+                    {invoicePreviewData.bill.lineItems.map(
+                      (item: any, idx: number) => (
+                        <div
+                          key={idx}
+                          className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] text-center border-b border-black/20 items-stretch min-h-[32px]"
+                        >
+                          <div
+                            className="px-2 py-1.5 text-left uppercase break-all border-r border-black/20 flex items-center"
+                            title={item.description}
+                          >
+                            {item.description}
+                          </div>
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                            {item.inDate || item.date || "-"}
+                          </div>
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                            {item.outDate || invoicePreviewData.bill.outwardDate || "-"}
+                          </div>
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                            {item.quantity || 0}
+                          </div>
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                            {item.weight || 0}
+                          </div>
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                            {item.remainingQuantity || item.remaining || 0}
+                          </div>
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                            {Number(item.price || item.rate || 0).toFixed(2)}
+                          </div>
+                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                            {invoicePreviewData.bill.storageMonths || item.months || 1}
+                          </div>
+                          <div className="px-2 py-1.5 text-[10px] font-bold flex items-center justify-end">
+                            {Number(item.amount || item.total || 0).toFixed(2)}
+                          </div>
+                        </div>
+                      )
+                    )}
                     {/* Empty fill to stretch */}
-                    <div className="flex-1 grid grid-cols-[3fr_1.5fr_1.5fr_1fr_1.5fr_1.5fr_1.5fr_1.2fr_2fr] divide-x divide-black/40">
-                        <div></div>
-                        <div></div>
-                        <div></div>
-                        <div></div>
-                        <div></div>
-                        <div></div>
-                        <div></div>
-                        <div></div>
-                        <div></div>
+                    <div className="flex-1 grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] items-stretch">
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div className="border-r border-black/20"></div>
+                      <div></div>
                     </div>
                   </div>
 
                   {/* Totals & Remarks Row */}
-                  <div className="flex border-b border-black h-32">
-                    <div className="w-1/2 p-3 font-semibold text-xs border-r border-black flex flex-col gap-1 font-mono leading-tight">
-                      <div className="flex"><span className="w-20 inline-block font-bold">Remarks :</span> {invoicePreviewData.bill.remarks || 'COLD RENT'}</div>
-                      <div className="flex"><span className="w-20 inline-block font-bold">Bank Detail:</span> Canara Bank</div>
-                      <div className="flex"><span className="w-20 inline-block font-bold">Branch:</span> Hazira</div>
-                      <div className="flex"><span className="w-20 inline-block font-bold">A/C:</span> 120029409483</div>
-                      <div className="flex"><span className="w-20 inline-block font-bold">IFSC:</span> CNRB0003428</div>
-                    </div>
-                    <div className="w-1/2 flex flex-col font-bold text-xs p-3 font-mono justify-between">
-                      <div className="space-y-1">
-                          <div className="flex justify-between items-center"><span className="text-slate-600 font-medium">Total Rent:</span> <span>₹{invoicePreviewData.bill.subTotal.toFixed(2)}</span></div>
-                          {invoicePreviewData.bill.taxTotal > 0 && (
-                            <>
-                                <div className="flex justify-between items-center"><span className="text-slate-600 font-medium">SGST ({(invoicePreviewData.bill.lineItems?.[0]?.tax / 2)}%):</span> <span>₹{(invoicePreviewData.bill.taxTotal / 2).toFixed(2)}</span></div>
-                                <div className="flex justify-between items-center"><span className="text-slate-600 font-medium">CGST ({(invoicePreviewData.bill.lineItems?.[0]?.tax / 2)}%):</span> <span>₹{(invoicePreviewData.bill.taxTotal / 2).toFixed(2)}</span></div>
-                            </>
-                          )}
+                  <div className="flex border-b border-black h-36">
+                    <div className="w-1/2 p-4 font-semibold text-xs border-r border-black flex flex-col gap-1.5 font-mono leading-tight bg-slate-50/30">
+                      <div className="flex">
+                        <span className="w-24 inline-block font-bold text-slate-500">
+                          Remarks :
+                        </span>{" "}
+                        <span className="text-black uppercase">
+                          {invoicePreviewData.bill.remarks || "COLD RENT"}
+                        </span>
                       </div>
-                      <div className="flex justify-between items-center border-t border-black pt-1 mt-1 text-sm font-black">
-                        <span>Total:</span>
-                        <span>₹{invoicePreviewData.bill.grandTotal.toFixed(2)}</span>
+                      <div className="flex">
+                        <span className="w-24 inline-block font-bold text-slate-500">
+                          Bank Detail:
+                        </span>{" "}
+                        <span className="text-black uppercase">
+                          {companySettings?.bankName || "Canara Bank"}
+                        </span>
+                      </div>
+                      <div className="flex">
+                        <span className="w-24 inline-block font-bold text-slate-500">
+                          Branch:
+                        </span>{" "}
+                        <span className="text-black uppercase">
+                          {companySettings?.bankBranch || "Hazira"}
+                        </span>
+                      </div>
+                      <div className="flex">
+                        <span className="w-24 inline-block font-bold text-slate-500">
+                          A/C Number:
+                        </span>{" "}
+                        <span className="text-black font-black">
+                          {companySettings?.accountNumber || "120029409483"}
+                        </span>
+                      </div>
+                      <div className="flex">
+                        <span className="w-24 inline-block font-bold text-slate-500">
+                          IFSC Code:
+                        </span>{" "}
+                        <span className="text-black font-black uppercase">
+                          {companySettings?.ifscCode || "CNRB0003428"}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="w-1/2 flex flex-col font-bold text-xs p-4 font-mono justify-between bg-white">
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-500 font-bold uppercase tracking-tighter">
+                            Sub Total:
+                          </span>{" "}
+                          <span className="text-base text-black">
+                            ₹{Number(invoicePreviewData.bill.subTotal || 0).toFixed(2)}
+                          </span>
+                        </div>
+                        {(invoicePreviewData.bill.taxTotal || 0) > 0 && (
+                          <>
+                            <div className="flex justify-between items-center">
+                              <span className="text-slate-500 font-bold uppercase tracking-tighter">
+                                SGST Total:
+                              </span>{" "}
+                              <span className="text-black">
+                                ₹
+                                {Number((invoicePreviewData.bill.taxTotal || 0) / 2).toFixed(
+                                  2,
+                                )}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-slate-500 font-bold uppercase tracking-tighter">
+                                CGST Total:
+                              </span>{" "}
+                              <span className="text-black">
+                                ₹
+                                {Number((invoicePreviewData.bill.taxTotal || 0) / 2).toFixed(
+                                  2,
+                                )}
+                              </span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      <div className="flex justify-between items-center border-t border-black pt-2 mt-2 text-lg font-black bg-slate-900 text-white p-2 rounded-lg">
+                        <span className="uppercase tracking-tighter text-xs text-indigo-300">
+                          Net Amount:
+                        </span>
+                        <span>
+                          ₹{Number(invoicePreviewData.bill.grandTotal || 0).toFixed(2)}
+                        </span>
                       </div>
                     </div>
                   </div>
 
                   {/* Words Row */}
-                  <div className="border-b border-black p-2 font-bold text-xs uppercase font-mono">
-                    Rs. {numberToWords(invoicePreviewData.bill.grandTotal)}
+                  <div className="border-b border-black p-3 font-bold text-[11px] uppercase font-mono bg-slate-100 flex items-center gap-3">
+                    <span className="text-slate-500 font-black italic">
+                      Amount in words:
+                    </span>
+                    <span className="text-black">
+                      {numberToWords(Number(invoicePreviewData.bill.grandTotal || 0))}
+                    </span>
                   </div>
 
                   {/* Terms & Signature */}
-                  <div className="flex h-24">
-                    <div className="w-2/3 p-2 text-[8px] leading-relaxed border-r border-black flex flex-col justify-start text-slate-700">
-                      <p className="font-bold mb-0.5 text-black">Terms & Conditions:</p>
-                      <p>Any complaint about this tax invoice must be lodged within two working days...</p>
-                      <p>Payment to be made in favour of JCRM Cold Storage LLP.</p>
-                      <p>Interest @24% p.a. will be charged if not paid within 7 days.</p>
-                      <p>Goods stored at owner's risk.</p>
+                  <div className="flex h-32">
+                    <div className="w-2/3 p-3 text-[9px] leading-relaxed border-r border-black flex flex-col justify-start text-slate-700 bg-white">
+                      <p className="font-black mb-1 text-black uppercase tracking-widest border-b border-black/10 inline-block">
+                        Terms & Conditions:
+                      </p>
+                      {companySettings?.termsAndConditions &&
+                        companySettings.termsAndConditions.length > 0 ? (
+                        companySettings.termsAndConditions.map((term, idx) => (
+                          <p key={idx}>
+                            {idx + 1}. {term}
+                          </p>
+                        ))
+                      ) : (
+                        <>
+                          <p>
+                            1. Any complaint about this tax invoice must be
+                            lodged within two working days.
+                          </p>
+                          <p>
+                            2. Payment to be made in favour of JCRM Cold Storage
+                            LLP.
+                          </p>
+                          <p>
+                            3. Interest @24% p.a. will be charged if not paid
+                            within 7 days.
+                          </p>
+                          <p>4. All goods are stored at owner's risk.</p>
+                        </>
+                      )}
                     </div>
-                    <div className="w-1/3 flex flex-col justify-between items-center p-2 text-[10px]">
-                      <div className="flex-1"></div>
-                      <div className="w-full border-t border-black text-center font-bold pt-1">
-                        For JCRM Cold Storage LLP
-                        <p className="invisible h-2"></p>
-                        Authorized Signatory
+                    <div className="w-1/3 flex flex-col justify-end items-center p-4 text-[11px] bg-slate-50/50 relative">
+                      {/* Signature Image Container - Absolute Positioning to prevent layout shifts */}
+                      <div className="absolute top-2 bottom-14 left-4 right-4 flex items-center justify-center pointer-events-none">
+                        {companySettings?.signatureUrl && (
+                          <img 
+                            src={companySettings.signatureUrl}
+                            alt="Signature"
+                            className="max-h-full max-w-full object-contain mix-blend-multiply"
+                            crossOrigin="anonymous"
+                          />
+                        )}
+                      </div>
+
+                      {/* Signature Text Section */}
+                      <div className="w-full border-t-2 border-slate-900 text-center font-black pt-2 uppercase tracking-tighter relative z-10">
+                        {companySettings?.signatureLabel ||
+                          "Authorized Signatory"}
+                        <div className="text-[9px] font-bold text-slate-500 mt-1 capitalize">
+                          For{" "}
+                          {companySettings?.companyName ||
+                            "JCRM Cold Storage LLP"}
+                        </div>
                       </div>
                     </div>
                   </div>
 
                   {/* Footer small text */}
-                  <div className="absolute -bottom-5 w-full text-center text-[8px] text-slate-500 print:bottom-[-20px]">
-                    SUBJECT TO Hazira JURISDICTION — This is a Computer Generated Invoice
+                  <div className="absolute -bottom-6 w-full text-center text-[9px] font-bold text-slate-400 print:bottom-[-25px] uppercase tracking-widest">
+                    SUBJECT TO {companySettings?.jurisdiction || "SURAT"}{" "}
+                    JURISDICTION —{" "}
+                    {companySettings?.footerText ||
+                      "THIS IS A COMPUTER GENERATED DOCUMENT"}
                   </div>
                 </div>
               </div>
             </div>
-            
+
             <style jsx global>{`
               @media print {
                 body * {
@@ -942,16 +1323,19 @@ export default function InwardsPage({
                 .print\\:max-h-none {
                   max-height: none !important;
                 }
-                #invoice-content, #invoice-content * {
+                #invoice-content,
+                #invoice-content * {
                   visibility: visible;
                 }
                 #invoice-content {
-                  position: absolute;
-                  left: 0;
-                  top: 0;
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
                   width: 100% !important;
+                  height: 100% !important;
                   padding: 0 !important;
                   margin: 0 !important;
+                  border: none !important;
                 }
               }
             `}</style>

@@ -4,13 +4,18 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Search, MoreVertical, Edit2, Trash2, Calendar, DollarSign, Tag, FileText, ChevronLeft, ChevronRight, Download, X, Paperclip, CreditCard } from 'lucide-react';
 import { Expense } from '@/app/lib/db';
 import { authFetch } from '@/app/lib/auth-fetch';
+import { useToast } from '@/app/_components/ToastProvider';
+import { useConfirm } from '@/app/_components/ConfirmProvider';
 
 export default function ExpensePage() {
+  const { showToast } = useToast();
+  const confirm = useConfirm();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -76,28 +81,86 @@ export default function ExpensePage() {
         fetchExpenses();
       } else {
         const errorData = await res.json();
-        alert(`Failed to save: ${errorData.message || 'Unknown error'}`);
+        showToast('error', `Failed to save: ${errorData.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to save expense:', error);
-      alert('Network error while saving expense.');
+      showToast('error', 'Network error while saving expense.');
     }
   };
 
   const handleDeleteExpense = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this expense?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Expense',
+      message: 'Are you sure you want to delete this expense entry? This record will be permanently removed.',
+      type: 'danger',
+      confirmText: 'Delete Expense'
+    });
+    if (!confirmed) return;
     try {
       const res = await authFetch(`/api/expenses/${id}`, { method: 'DELETE' });
       if (res.ok) {
         fetchExpenses();
+        const newSelected = new Set(selectedIds);
+        newSelected.delete(id);
+        setSelectedIds(newSelected);
       } else {
         const errorData = await res.json();
-        alert(`Failed to delete: ${errorData.message || 'Unknown error'}`);
+        showToast('error', `Failed to delete expense: ${errorData.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to delete expense:', error);
-      alert('Network error while deleting expense.');
+      showToast('error', 'Network error while deleting expense.');
     }
+  };
+
+  const handleBulkDeleteExpenses = async () => {
+    const count = selectedIds.size;
+    if (count === 0) return;
+
+    const confirmed = await confirm({
+      title: 'Bulk Delete Expenses',
+      message: `Are you sure you want to delete ${count} selected expenses? This action cannot be undone.`,
+      type: 'danger',
+      confirmText: `Delete ${count} Expenses`
+    });
+
+    if (!confirmed) return;
+
+    try {
+      const res = await authFetch('/api/expenses/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+
+      if (res.ok) {
+        showToast('success', `${count} expenses deleted successfully`);
+        setSelectedIds(new Set());
+        fetchExpenses();
+      } else {
+        const errorData = await res.json();
+        showToast('error', errorData.error || 'Failed to bulk delete');
+      }
+    } catch (error) {
+      console.error('Bulk delete error:', error);
+      showToast('error', 'Network error during bulk delete');
+    }
+  };
+
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedIds(new Set(expenses.map(exp => exp.id)));
+    } else {
+      setSelectedIds(new Set());
+    }
+  };
+
+  const handleSelectRow = (id: string) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) newSelected.delete(id);
+    else newSelected.add(id);
+    setSelectedIds(newSelected);
   };
 
   const totalPages = Math.ceil(total / pageSize);
@@ -143,17 +206,28 @@ export default function ExpensePage() {
             <span className="font-bold text-neutral-500 uppercase tracking-widest text-[10px]">Entries</span>
           </div>
 
-          <div className="relative w-full sm:w-72">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search className="h-4 w-4 text-neutral-400" />
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+            <div className="relative w-full sm:w-72">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-4 w-4 text-neutral-400" />
+              </div>
+              <input
+                type="text"
+                placeholder="Search expenses..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="block w-full pl-10 pr-3 py-2 border border-neutral-200 dark:border-neutral-700 rounded-xl bg-neutral-50 dark:bg-neutral-800 text-sm placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all shadow-inner"
+              />
             </div>
-            <input
-              type="text"
-              placeholder="Search expenses..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="block w-full pl-10 pr-3 py-2 border border-neutral-200 dark:border-neutral-700 rounded-xl bg-neutral-50 dark:bg-neutral-800 text-sm placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all shadow-inner"
-            />
+            {selectedIds.size > 0 && (
+              <button
+                onClick={handleBulkDeleteExpenses}
+                className="flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-sm bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20 transition-all active:scale-95 border border-rose-100 dark:border-rose-500/20 shadow-sm"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete ({selectedIds.size})</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -163,6 +237,14 @@ export default function ExpensePage() {
             <table className="min-w-full divide-y divide-neutral-100 dark:divide-neutral-800">
               <thead className="bg-neutral-50/50 dark:bg-neutral-800/50">
                 <tr>
+                  <th scope="col" className="px-6 py-4 text-left">
+                    <input
+                      type="checkbox"
+                      className="rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                      checked={expenses.length > 0 && selectedIds.size === expenses.length}
+                      onChange={handleSelectAll}
+                    />
+                  </th>
                   <th scope="col" className="px-6 py-4 text-left text-[10px] font-black text-neutral-500 dark:text-neutral-400 uppercase tracking-widest">Title</th>
                   <th scope="col" className="px-6 py-4 text-left text-[10px] font-black text-neutral-500 dark:text-neutral-400 uppercase tracking-widest">Amount</th>
                   <th scope="col" className="px-6 py-4 text-left text-[10px] font-black text-neutral-500 dark:text-neutral-400 uppercase tracking-widest">Category</th>
@@ -174,7 +256,7 @@ export default function ExpensePage() {
               <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800 bg-white dark:bg-neutral-900">
                 {expenses.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-20 text-center">
+                    <td colSpan={7} className="px-6 py-20 text-center">
                       <div className="flex flex-col items-center justify-center space-y-3">
                         <div className="p-4 bg-neutral-50 dark:bg-neutral-800 rounded-full">
                           <DollarSign className="w-10 h-10 text-neutral-300 dark:text-neutral-600" />
@@ -186,6 +268,14 @@ export default function ExpensePage() {
                 ) : (
                   expenses.map((expense) => (
                     <tr key={expense.id} className="hover:bg-neutral-50/50 dark:hover:bg-neutral-800/30 transition-all group">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(expense.id)}
+                          onChange={() => handleSelectRow(expense.id)}
+                          className="rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                        />
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-neutral-900 dark:text-neutral-100">
                         {expense.title}
                       </td>

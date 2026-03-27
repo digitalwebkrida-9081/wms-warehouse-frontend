@@ -18,6 +18,8 @@ import {
   Lock as LockIcon
 } from "lucide-react";
 import { authFetch } from "@/app/lib/auth-fetch";
+import { useToast } from "@/app/_components/ToastProvider";
+import { useConfirm } from "@/app/_components/ConfirmProvider";
 import Cookies from "js-cookie";
 
 interface User {
@@ -28,6 +30,8 @@ interface User {
 }
 
 export default function UserManagementPage() {
+  const { showToast } = useToast();
+  const confirm = useConfirm();
   const router = useRouter();
   
   useEffect(() => {
@@ -106,11 +110,17 @@ export default function UserManagementPage() {
 
   const handleDeleteUser = async (id: string, username: string) => {
     if (username === Cookies.get("user-name")) {
-      alert("You cannot delete your own account.");
+      showToast('error', "You cannot delete your own account.");
       return;
     }
 
-    if (!confirm(`Are you sure you want to delete user "${username}"?`)) return;
+    const confirmed = await confirm({
+      title: 'Delete User',
+      message: `Are you sure you want to delete user "${username}"? This user will lose all access immediately.`,
+      type: 'danger',
+      confirmText: 'Delete User'
+    });
+    if (!confirmed) return;
 
     try {
       const res = await authFetch(`/api/auth/${id}`, { method: "DELETE" });

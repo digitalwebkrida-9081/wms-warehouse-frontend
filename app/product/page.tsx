@@ -5,8 +5,12 @@ import { useRouter } from 'next/navigation';
 import { Plus, Search, MoreVertical, Edit2, Trash2, Package, ChevronLeft, ChevronRight, CheckCircle2, X } from 'lucide-react';
 import { Category, ProductMaster } from '@/app/lib/db';
 import { authFetch } from '@/app/lib/auth-fetch';
+import { useToast } from '@/app/_components/ToastProvider';
+import { useConfirm } from '@/app/_components/ConfirmProvider';
 
 export default function ProductMasterPage() {
+  const { showToast } = useToast();
+  const confirm = useConfirm();
   const router = useRouter();
   const [products, setProducts] = useState<ProductMaster[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -14,6 +18,7 @@ export default function ProductMasterPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   
   // Modal State
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
@@ -104,32 +109,94 @@ export default function ProductMasterPage() {
 
       if (res.ok) {
         setIsProductModalOpen(false);
-        alert(editingProduct ? 'Product updated successfully!' : 'Product created successfully!');
+        showToast('success', editingProduct ? 'Product updated successfully!' : 'Product created successfully!');
         fetchProducts();
       } else {
         const errorData = await res.json();
-        alert(`Failed to save product: ${errorData.message || errorData.error || 'Unknown error'}`);
+        showToast('error', `Failed to save product: ${errorData.message || errorData.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to save product master:', error);
-      alert('Network error while saving product.');
+      showToast('error', 'Network error while saving product.');
     }
   };
 
   const handleDeleteProduct = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this product?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Product',
+      message: 'Are you sure you want to delete this product? This may affect existing inventory records.',
+      type: 'danger',
+      confirmText: 'Delete Product'
+    });
+    if (!confirmed) return;
     try {
       const res = await authFetch(`/api/product/${id}`, { method: 'DELETE' });
       if (res.ok) {
         fetchProducts();
+        const newSelected = new Set(selectedIds);
+        newSelected.delete(id);
+        setSelectedIds(newSelected);
       } else {
         const errorData = await res.json();
-        alert(`Failed to delete product: ${errorData.message || errorData.error || 'Unknown error'}`);
+        showToast('error', `Failed to delete: ${errorData.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to delete product:', error);
-      alert('Network error while deleting product.');
+      showToast('error', 'Network error while deleting product.');
     }
+  };
+
+  const handleBulkDeleteProducts = async () => {
+    const count = selectedIds.size;
+    if (count === 0) return;
+
+    const confirmed = await confirm({
+      title: 'Bulk Delete Products',
+      message: `Are you sure you want to delete ${count} selected products? This action cannot be undone.`,
+      type: 'danger',
+      confirmText: `Delete ${count} Products`
+    });
+
+    if (!confirmed) return;
+
+    try {
+      const res = await authFetch('/api/product/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+
+      if (res.ok) {
+        showToast('success', `${count} products deleted successfully`);
+        setSelectedIds(new Set());
+        fetchProducts();
+      } else {
+        const errorData = await res.json();
+        showToast('error', errorData.error || 'Failed to bulk delete');
+      }
+    } catch (error) {
+      console.error('Bulk delete error:', error);
+      showToast('error', 'Network error during bulk delete');
+    }
+  };
+
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      const allIds = new Set(products.map(p => p.id));
+      setSelectedIds(allIds);
+    } else {
+      setSelectedIds(new Set());
+    }
+  };
+
+  const handleSelectRow = (id: string) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
   };
 
   const totalPages = Math.ceil(total / pageSize);
@@ -172,17 +239,28 @@ export default function ProductMasterPage() {
             <span className="font-medium">Entries</span>
           </div>
 
-          <div className="relative w-full sm:w-80">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search className="h-4 w-4 text-neutral-400" />
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+            {selectedIds.size > 0 && (
+              <button
+                onClick={handleBulkDeleteProducts}
+                className="flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-sm bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20 transition-all active:scale-95 border border-rose-100 dark:border-rose-500/20 shadow-sm"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete ({selectedIds.size})</span>
+              </button>
+            )}
+            <div className="relative w-full sm:w-80">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-4 w-4 text-neutral-400" />
+              </div>
+              <input
+                type="text"
+                placeholder="Search products..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="block w-full pl-10 pr-3 py-2 border border-neutral-200 dark:border-neutral-700 rounded-lg bg-neutral-50 dark:bg-neutral-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow"
+              />
             </div>
-            <input
-              type="text"
-              placeholder="Search products..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="block w-full pl-10 pr-3 py-2 border border-neutral-200 dark:border-neutral-700 rounded-lg bg-neutral-50 dark:bg-neutral-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow"
-            />
           </div>
         </div>
 
@@ -192,6 +270,14 @@ export default function ProductMasterPage() {
             <table className="min-w-full divide-y divide-neutral-200 dark:divide-neutral-800">
               <thead className="bg-neutral-50 dark:bg-neutral-800/50">
                 <tr>
+                  <th className="px-6 py-4 text-left w-12">
+                    <input
+                      type="checkbox"
+                      className="rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                      checked={products.length > 0 && selectedIds.size === products.length}
+                      onChange={handleSelectAll}
+                    />
+                  </th>
                   <th className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Product Name</th>
                   <th className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Code</th>
                   <th className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Category</th>
@@ -215,6 +301,14 @@ export default function ProductMasterPage() {
                 ) : (
                   products.map((product) => (
                     <tr key={product.id} className="hover:bg-neutral-50/50 dark:hover:bg-neutral-800/50 transition-colors group">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(product.id)}
+                          onChange={() => handleSelectRow(product.id)}
+                          className="rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                        />
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-neutral-900 dark:text-neutral-100">
                         {product.name}
                       </td>

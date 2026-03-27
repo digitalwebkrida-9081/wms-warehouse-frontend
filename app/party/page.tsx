@@ -5,8 +5,12 @@ import { useRouter } from 'next/navigation';
 import { Plus, Search, MoreVertical, Edit2, Trash2, ChevronLeft, ChevronRight, User } from 'lucide-react';
 import { Party } from '@/app/lib/db';
 import { authFetch } from '@/app/lib/auth-fetch';
+import { useToast } from '@/app/_components/ToastProvider';
+import { useConfirm } from '@/app/_components/ConfirmProvider';
 
 export default function PartyPage() {
+  const { showToast } = useToast();
+  const confirm = useConfirm();
   const [parties, setParties] = useState<Party[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -113,16 +117,22 @@ export default function PartyPage() {
         fetchParties();
       } else {
         const errorData = await res.json();
-        alert(`Failed to save party: ${errorData.message || 'Unknown error'}`);
+        showToast('error', `Failed to save party: ${errorData.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to save:', error);
-      alert('Network error while saving party.');
+      showToast('error', 'Network error while saving party.');
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this party?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Party',
+      message: 'Are you sure you want to delete this party? All related invoices and history will be affected.',
+      type: 'danger',
+      confirmText: 'Delete Party'
+    });
+    if (!confirmed) return;
     try {
       const res = await authFetch(`/api/party/${id}`, { method: 'DELETE' });
       if (res.ok) {
@@ -132,11 +142,45 @@ export default function PartyPage() {
         setSelectedIds(newSelected);
       } else {
         const errorData = await res.json();
-        alert(`Failed to delete party: ${errorData.message || 'Unknown error'}`);
+        showToast('error', `Failed to delete party: ${errorData.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to delete:', error);
-      alert('Network error while deleting party.');
+      showToast('error', 'Network error while deleting party.');
+    }
+  };
+
+  const handleBulkDeleteParties = async () => {
+    const count = selectedIds.size;
+    if (count === 0) return;
+
+    const confirmed = await confirm({
+      title: 'Bulk Delete Parties',
+      message: `Are you sure you want to delete ${count} selected parties? This action cannot be undone.`,
+      type: 'danger',
+      confirmText: `Delete ${count} Parties`
+    });
+
+    if (!confirmed) return;
+
+    try {
+      const res = await authFetch('/api/party/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+
+      if (res.ok) {
+        showToast('success', `${count} parties deleted successfully`);
+        setSelectedIds(new Set());
+        fetchParties();
+      } else {
+        const errorData = await res.json();
+        showToast('error', errorData.error || 'Failed to bulk delete');
+      }
+    } catch (error) {
+      console.error('Bulk delete error:', error);
+      showToast('error', 'Network error during bulk delete');
     }
   };
 
@@ -196,6 +240,15 @@ export default function PartyPage() {
                 className="block w-full pl-10 pr-3 py-2 border border-neutral-200 dark:border-neutral-700 rounded-lg bg-neutral-50 dark:bg-neutral-800 text-sm placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow"
               />
             </div>
+            {selectedIds.size > 0 && (
+              <button
+                onClick={handleBulkDeleteParties}
+                className="flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-sm bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20 transition-all active:scale-95 border border-rose-100 dark:border-rose-500/20 shadow-sm"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete ({selectedIds.size})</span>
+              </button>
+            )}
           </div>
         </div>
 
