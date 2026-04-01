@@ -115,6 +115,7 @@ export default function PartyPage() {
       if (res.ok) {
         closeModal();
         fetchParties();
+        showToast('success', editingParty ? 'Party updated successfully' : 'Party created successfully');
       } else {
         const errorData = await res.json();
         showToast('error', `Failed to save party: ${errorData.message || 'Unknown error'}`);
@@ -140,6 +141,7 @@ export default function PartyPage() {
         const newSelected = new Set(selectedIds);
         newSelected.delete(id);
         setSelectedIds(newSelected);
+        showToast('success', 'Party deleted successfully');
       } else {
         const errorData = await res.json();
         showToast('error', `Failed to delete party: ${errorData.message || 'Unknown error'}`);

@@ -64,8 +64,10 @@ export interface Inward {
   productId: string;
   totalWeight: number;
   remainingWeight: number;
-  quantity?: number; // Count of units (bags, boxes, etc)
-  price?: number; // Base price
+  quantity?: number; 
+  remainingQuantity?: number;
+  unitWeight?: number;
+  price?: number; 
   additionalCharges?: number; // Loading, unloading, extra costs
   goodsCondition?: string;
   remarks?: string;
@@ -81,6 +83,8 @@ export interface Outward {
   partyId: string;
   productId: string;
   outwardWeight: number;
+  quantity?: number;
+  unitWeight?: number;
   goodsCondition?: string;
   remarks?: string;
   createdAt?: string;
@@ -99,6 +103,7 @@ export interface Bill {
     inwardId: string;
     description: string;
     quantity: number;
+    unitWeight?: number;
     rate: number;
     tax: number;
     inDate?: string;
@@ -161,6 +166,7 @@ export interface Quotation {
     inwardId: string;
     description: string;
     quantity: number;
+    unitWeight?: number;
     weight?: number;
     inDate?: string;
     outDate?: string;

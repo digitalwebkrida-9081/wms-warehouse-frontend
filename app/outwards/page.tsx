@@ -10,6 +10,7 @@ import { Inward, Outward } from '@/app/lib/db';
 import { authFetch } from '@/app/lib/auth-fetch';
 import { useToast } from '@/app/_components/ToastProvider';
 import { useConfirm } from '@/app/_components/ConfirmProvider';
+import { useLoading } from '@/app/_components/LoadingProvider';
 
 interface CompanySettings {
   companyName: string;
@@ -52,6 +53,7 @@ export default function OutwardsPage({
 
 function OutwardsContent() {
   const { showToast } = useToast();
+  const { setIsLoading } = useLoading();
   const confirm = useConfirm();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -102,6 +104,7 @@ function OutwardsContent() {
   }, [fetchCompanySettings]);
 
   const fetchOutwards = useCallback(async () => {
+    setIsLoading(true);
     try {
       let url = `/api/outward?page=${page}&pageSize=${pageSize}&search=${encodeURIComponent(search)}`;
       if (inwardIdFilter) {
@@ -117,8 +120,10 @@ function OutwardsContent() {
       setTotal(data.total || 0);
     } catch (error) {
       console.error('Failed to fetch outwards:', error);
+    } finally {
+      setIsLoading(false);
     }
-  }, [page, pageSize, search, inwardIdFilter]);
+  }, [page, pageSize, search, inwardIdFilter, setIsLoading]);
 
   const fetchInwards = useCallback(async () => {
     try {
@@ -198,8 +203,10 @@ function OutwardsContent() {
         inwardId: selectedInward.id,
         partyId: selectedInward.partyId,
         productId: selectedInward.productId,
-        // Optional: you could pre-fill outwardWeight with remainingWeight
-        outwardWeight: selectedInward.remainingWeight
+        unitWeight: selectedInward.unitWeight || 0,
+        // Pre-fill with remaining weight/quantity
+        outwardWeight: selectedInward.remainingWeight,
+        quantity: selectedInward.remainingQuantity ?? selectedInward.quantity ?? 0
       });
     }
   };
@@ -209,6 +216,7 @@ function OutwardsContent() {
     const url = editingOutward ? `/api/outward/${editingOutward.id}` : '/api/outward';
     const method = editingOutward ? 'PUT' : 'POST';
     
+    setIsLoading(true);
     try {
       // Ensure we only send the ID, not the populated object if it somehow got in there
       const payload = { ...formData };
@@ -231,6 +239,8 @@ function OutwardsContent() {
     } catch (error) {
       console.error('Failed to save:', error);
       showToast('error', 'Network error while saving outward.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -242,6 +252,7 @@ function OutwardsContent() {
       confirmText: 'Delete Entry'
     });
     if (!confirmed) return;
+    setIsLoading(true);
     try {
       const res = await authFetch(`/api/outward/${id}`, { method: 'DELETE' });
       if (res.ok) {
@@ -256,6 +267,8 @@ function OutwardsContent() {
     } catch (error) {
       console.error('Failed to delete:', error);
       showToast('error', 'Network error while deleting outward.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -272,6 +285,7 @@ function OutwardsContent() {
 
     if (!confirmed) return;
 
+    setIsLoading(true);
     try {
       const res = await authFetch('/api/outward/bulk-delete', {
         method: 'POST',
@@ -290,6 +304,8 @@ function OutwardsContent() {
     } catch (error) {
       console.error('Bulk delete error:', error);
       showToast('error', 'Network error during bulk delete');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -299,6 +315,7 @@ function OutwardsContent() {
   };
 
   const confirmGenerateBill = async () => {
+    setIsLoading(true);
     try {
       const res = await authFetch('/api/billing/generate-from-outward', {
         method: 'POST',
@@ -327,6 +344,8 @@ function OutwardsContent() {
     } catch (error: any) {
       console.error('Failed to generate bill:', error);
       showToast('error', `Error generating bill: ${error.message}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -335,6 +354,7 @@ function OutwardsContent() {
   };
 
   const handleDownloadPDF = async () => {
+    setIsLoading(true);
     try {
       const html2canvas = (await import("html2canvas-pro")).default;
       const { jsPDF } = await import("jspdf");
@@ -369,6 +389,8 @@ function OutwardsContent() {
         "error",
         "Failed to generate PDF. Please try printing to PDF instead.",
       );
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -497,7 +519,9 @@ function OutwardsContent() {
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Total Weight</th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Remaining</th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Party</th>
-                  <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Product</th>
+                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Product</th>
+                  <th scope="col" className="px-6 py-4 text-center text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider bg-indigo-50/50 dark:bg-indigo-500/10">Outward Wt</th>
+                  <th scope="col" className="px-6 py-4 text-center text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider bg-emerald-50/50 dark:bg-emerald-500/10">Outward Qty</th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Goods Condition</th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Outward</th>
                   <th scope="col" className="px-6 py-4 text-right text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Action</th>
@@ -506,7 +530,7 @@ function OutwardsContent() {
               <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 bg-white dark:bg-neutral-900">
                 {outwards.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-12 text-center text-sm text-neutral-500">
+                    <td colSpan={11} className="px-6 py-12 text-center text-sm text-neutral-500">
                       <div className="flex flex-col items-center justify-center">
                         <Download className="w-12 h-12 text-neutral-300 dark:text-neutral-600 mb-4" />
                         <p className="text-lg font-medium text-neutral-900 dark:text-neutral-100">No Outwards Found</p>
@@ -545,6 +569,12 @@ function OutwardsContent() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
                         {outward.productId}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-900 dark:text-neutral-100 font-semibold text-center bg-indigo-50/30 dark:bg-indigo-500/5">
+                        {outward.outwardWeight?.toLocaleString() || '0'} kg
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-900 dark:text-neutral-100 font-semibold text-center bg-emerald-50/30 dark:bg-emerald-500/5">
+                        {outward.quantity?.toLocaleString() || '0'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <span className="inline-flex items-center text-neutral-600 dark:text-neutral-300">
@@ -647,7 +677,7 @@ function OutwardsContent() {
                     <option value="" disabled>Select an Inward entry</option>
                     {inwards.map(i => (
                       <option key={i.id} value={i.id}>
-                        {i.partyId} - {i.productId} ({i.inwardDate}) - Rem: {i.remainingWeight}kg
+                        {i.partyId} - {i.productId} ({i.inwardDate}) - Rem: {i.remainingWeight}kg / {i.remainingQuantity ?? i.quantity ?? 0} qty (Unit: {i.unitWeight}kg)
                       </option>
                     ))}
                   </select>
@@ -665,14 +695,43 @@ function OutwardsContent() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block font-medium text-neutral-700 dark:text-neutral-300">Outward Weight (kg) <span className="text-red-500">*</span></label>
+                  <label className="block font-medium text-neutral-700 dark:text-neutral-300">Quantity <span className="text-red-500">*</span></label>
                   <input
                     type="number"
                     required
                     min={0}
-                    value={formData.outwardWeight || ''}
-                    onChange={(e) => setFormData({ ...formData, outwardWeight: Number(e.target.value) })}
+                    value={formData.quantity || ''}
+                    onChange={(e) => {
+                      const qty = Number(e.target.value);
+                      const unitWt = formData.unitWeight || 0;
+                      setFormData({ 
+                        ...formData, 
+                        quantity: qty,
+                        outwardWeight: Number((qty * unitWt).toFixed(2))
+                      });
+                    }}
                     className="w-full px-3 py-2 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block font-medium text-neutral-700 dark:text-neutral-300">Unit Weight (kg)</label>
+                  <input
+                    type="number"
+                    readOnly
+                    value={formData.unitWeight || 0}
+                    className="w-full px-3 py-2 bg-neutral-100 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-neutral-500 cursor-not-allowed"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block font-medium text-neutral-700 dark:text-neutral-300">Outward Weight (kg)</label>
+                  <input
+                    type="number"
+                    readOnly
+                    placeholder="Calculated"
+                    value={formData.outwardWeight || ''}
+                    className="w-full px-3 py-2 bg-neutral-100 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-neutral-500 font-bold cursor-not-allowed"
                   />
                 </div>
 
@@ -985,10 +1044,10 @@ function OutwardsContent() {
                           Qty
                         </div>
                         <div className="px-1 flex items-center justify-center border-r border-slate-900">
-                          Weight
+                          Unit.Wt
                         </div>
                         <div className="px-1 flex items-center justify-center border-r border-slate-900">
-                          Rem.
+                          Tot.Wt
                         </div>
                         <div className="px-1 flex items-center justify-center border-r border-slate-900">
                           Price
@@ -1006,7 +1065,7 @@ function OutwardsContent() {
                         {pageItems.map((item: any, idx: number) => (
                           <div
                             key={idx}
-                            className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] text-center border-b border-black/20 items-stretch min-h-[32px]"
+                            className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] text-center border-b border-black/20 items-stretch min-h-8"
                           >
                             <div
                               className="px-2 py-1.5 text-left uppercase break-all border-r border-black/20 flex items-center"
@@ -1024,10 +1083,10 @@ function OutwardsContent() {
                               {item.quantity || 0}
                             </div>
                             <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                              {item.weight || 0}
+                              {item.unitWeight || 0}
                             </div>
                             <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                              {item.remaining || 0}
+                              {item.weight || 0}
                             </div>
                             <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
                               {Number(item.rate || 0).toFixed(2)}

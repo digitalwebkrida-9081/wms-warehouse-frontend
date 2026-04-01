@@ -7,9 +7,11 @@ import { Category, ProductMaster } from '@/app/lib/db';
 import { authFetch } from '@/app/lib/auth-fetch';
 import { useToast } from '@/app/_components/ToastProvider';
 import { useConfirm } from '@/app/_components/ConfirmProvider';
+import { useLoading } from '@/app/_components/LoadingProvider';
 
 export default function ProductMasterPage() {
   const { showToast } = useToast();
+  const { setIsLoading } = useLoading();
   const confirm = useConfirm();
   const router = useRouter();
   const [products, setProducts] = useState<ProductMaster[]>([]);
@@ -101,6 +103,7 @@ export default function ProductMasterPage() {
       const url = editingProduct ? `/api/product/${editingProduct.id}` : '/api/product';
       const method = editingProduct ? 'PUT' : 'POST';
       
+      setIsLoading(true);
       const res = await authFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -118,6 +121,8 @@ export default function ProductMasterPage() {
     } catch (error) {
       console.error('Failed to save product master:', error);
       showToast('error', 'Network error while saving product.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -129,6 +134,7 @@ export default function ProductMasterPage() {
       confirmText: 'Delete Product'
     });
     if (!confirmed) return;
+    setIsLoading(true);
     try {
       const res = await authFetch(`/api/product/${id}`, { method: 'DELETE' });
       if (res.ok) {
@@ -136,6 +142,7 @@ export default function ProductMasterPage() {
         const newSelected = new Set(selectedIds);
         newSelected.delete(id);
         setSelectedIds(newSelected);
+        showToast('success', 'Product deleted successfully!');
       } else {
         const errorData = await res.json();
         showToast('error', `Failed to delete: ${errorData.message || 'Unknown error'}`);
@@ -143,6 +150,8 @@ export default function ProductMasterPage() {
     } catch (error) {
       console.error('Failed to delete product:', error);
       showToast('error', 'Network error while deleting product.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -159,6 +168,7 @@ export default function ProductMasterPage() {
 
     if (!confirmed) return;
 
+    setIsLoading(true);
     try {
       const res = await authFetch('/api/product/bulk-delete', {
         method: 'POST',
@@ -177,6 +187,8 @@ export default function ProductMasterPage() {
     } catch (error) {
       console.error('Bulk delete error:', error);
       showToast('error', 'Network error during bulk delete');
+    } finally {
+      setIsLoading(false);
     }
   };
 

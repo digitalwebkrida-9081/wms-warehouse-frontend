@@ -28,6 +28,7 @@ import { Quotation } from "@/app/lib/db";
 import { authFetch } from "@/app/lib/auth-fetch";
 import { useToast } from "@/app/_components/ToastProvider";
 import { useConfirm } from "@/app/_components/ConfirmProvider";
+import { useLoading } from "@/app/_components/LoadingProvider";
 
 interface CompanySettings {
   companyName: string;
@@ -66,6 +67,7 @@ interface Inward {
 }
 export default function QuotationPage() {
   const { showToast } = useToast();
+  const { setIsLoading } = useLoading();
   const confirm = useConfirm();
   const router = useRouter();
   const [inwards, setInwards] = useState<Inward[]>([]);
@@ -126,6 +128,7 @@ export default function QuotationPage() {
   }, [fetchCompanySettings]);
 
   const fetchInwards = useCallback(async () => {
+    setIsLoading(true);
     try {
       const res = await authFetch(
         `/api/inwards?page=${page}&pageSize=${pageSize}&search=${encodeURIComponent(search)}`,
@@ -139,8 +142,10 @@ export default function QuotationPage() {
       setTotal(data.total || 0);
     } catch (error) {
       console.error("Failed to fetch inwards:", error);
+    } finally {
+      setIsLoading(false);
     }
-  }, [page, pageSize, search]);
+  }, [page, pageSize, search, setIsLoading]);
 
   const fetchParties = useCallback(async () => {
     try {
@@ -160,6 +165,7 @@ export default function QuotationPage() {
   }, []);
 
   const fetchQuotations = useCallback(async () => {
+    setIsLoading(true);
     try {
       const res = await authFetch(
         `/api/quotation?page=${quotationPage}&pageSize=${quotationPageSize}&search=${encodeURIComponent(quotationSearch)}`,
@@ -173,8 +179,10 @@ export default function QuotationPage() {
       setQuotationTotal(data.total || 0);
     } catch (error) {
       console.error("Failed to fetch quotations:", error);
+    } finally {
+      setIsLoading(false);
     }
-  }, [quotationPage, quotationPageSize, quotationSearch]);
+  }, [quotationPage, quotationPageSize, quotationSearch, setIsLoading]);
 
   const fetchProducts = useCallback(async () => {
     try {
@@ -264,6 +272,7 @@ export default function QuotationPage() {
       : "/api/inwards";
     const method = editingInward ? "PUT" : "POST";
 
+    setIsLoading(true);
     try {
       const res = await authFetch(url, {
         method,
@@ -280,6 +289,8 @@ export default function QuotationPage() {
     } catch (error) {
       console.error("Failed to save inward:", error);
       showToast('error', 'Network error while saving inward.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -291,6 +302,7 @@ export default function QuotationPage() {
       confirmText: 'Delete Now'
     });
     if (!confirmed) return;
+    setIsLoading(true);
     try {
       const res = await authFetch(`/api/inwards/${id}`, { method: "DELETE" });
       if (res.ok) {
@@ -303,6 +315,8 @@ export default function QuotationPage() {
     } catch (error) {
       console.error("Failed to delete inward:", error);
       showToast('error', 'Network error while deleting inward.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -319,6 +333,7 @@ export default function QuotationPage() {
 
     if (!confirmed) return;
 
+    setIsLoading(true);
     try {
       const res = await authFetch('/api/inwards/bulk-delete', {
         method: 'POST',
@@ -337,12 +352,15 @@ export default function QuotationPage() {
     } catch (error) {
       console.error('Bulk delete error:', error);
       showToast('error', 'Network error during bulk delete');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleOpenQuotationModal = async () => {
     if (selectedInwardIds.size === 0) return;
     setIsManualMode(false);
+    setIsLoading(true);
     try {
       const res = await authFetch("/api/quotation/generate-preview", {
         method: "POST",
@@ -359,11 +377,14 @@ export default function QuotationPage() {
     } catch (error: any) {
       console.error("Failed to generate preview:", error);
       showToast('error', `Error generating preview: ${error.message}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleCreateManualQuotation = async () => {
     setIsManualMode(true);
+    setIsLoading(true);
     try {
       const res = await authFetch("/api/quotation/next-number");
       if (!res.ok) throw new Error("Failed to fetch quotation number");
@@ -383,6 +404,8 @@ export default function QuotationPage() {
     } catch (error) {
       console.error("Failed to start manual quotation:", error);
       showToast('error', "Failed to start manual quotation.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -408,6 +431,7 @@ export default function QuotationPage() {
   };
 
   const handleSaveQuotation = async () => {
+    setIsLoading(true);
     try {
       const res = await authFetch("/api/quotation", {
         method: "POST",
@@ -433,6 +457,8 @@ export default function QuotationPage() {
     } catch (error) {
       console.error("Failed to save quotation:", error);
       showToast('error', "Failed to save quotation. Please check your connection or server status.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -441,6 +467,7 @@ export default function QuotationPage() {
   };
 
   const handleDownloadPDF = async () => {
+    setIsLoading(true);
     try {
       const html2canvas = (await import("html2canvas-pro")).default;
       const { jsPDF } = await import("jspdf");
@@ -474,10 +501,13 @@ export default function QuotationPage() {
     } catch (e) {
       console.error("Failed to generate PDF:", e);
       showToast('error', "Could not download PDF. Please try printing to PDF instead.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleViewQuotation = async (quotation: Quotation) => {
+    setIsLoading(true);
     try {
       // Refresh company settings to ensure latest data
       await fetchCompanySettings();
@@ -501,6 +531,8 @@ export default function QuotationPage() {
         quotation,
         partyDetails: {},
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -597,6 +629,7 @@ export default function QuotationPage() {
   const handleUpdateQuotation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingQuotation) return;
+    setIsLoading(true);
     try {
       const res = await authFetch(`/api/quotation/${editingQuotation.id}`, {
         method: "PUT",
@@ -613,6 +646,8 @@ export default function QuotationPage() {
     } catch (error) {
       console.error("Failed to update quotation:", error);
       showToast('error', 'Network error while updating quotation.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -624,6 +659,7 @@ export default function QuotationPage() {
       confirmText: 'Delete Quotation'
     });
     if (!confirmed) return;
+    setIsLoading(true);
     try {
       const res = await authFetch(`/api/quotation/${id}`, { method: "DELETE" });
       if (res.ok) {
@@ -636,6 +672,8 @@ export default function QuotationPage() {
     } catch (error) {
       console.error("Failed to delete quotation:", error);
       showToast('error', 'Network error while deleting quotation.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -652,6 +690,7 @@ export default function QuotationPage() {
 
     if (!confirmed) return;
 
+    setIsLoading(true);
     try {
       const res = await authFetch('/api/quotation/bulk-delete', {
         method: 'POST',
@@ -670,6 +709,8 @@ export default function QuotationPage() {
     } catch (error) {
       console.error('Bulk delete error:', error);
       showToast('error', 'Network error during bulk delete');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -680,6 +721,7 @@ export default function QuotationPage() {
     // Recalculate total for this item
     if (
       field === "quantity" ||
+      field === "unitWeight" ||
       field === "weight" ||
       field === "months" ||
       field === "rate" ||
@@ -689,8 +731,19 @@ export default function QuotationPage() {
         field === "quantity"
           ? Number(value)
           : newLineItems[index].quantity || 0;
-      const weight =
-        field === "weight" ? Number(value) : newLineItems[index].weight || qty;
+      const unitWt = 
+        field === "unitWeight"
+          ? Number(value)
+          : newLineItems[index].unitWeight || 0;
+      
+      let weight = newLineItems[index].weight || 0;
+      if (field === "quantity" || field === "unitWeight") {
+        weight = Number((qty * unitWt).toFixed(2));
+        newLineItems[index].weight = weight;
+      } else if (field === "weight") {
+        weight = Number(value);
+      }
+      
       const months =
         field === "months" ? Number(value) : newLineItems[index].months || 1;
       const rate = field === "rate" ? Number(value) : newLineItems[index].rate;
@@ -1544,19 +1597,25 @@ export default function QuotationPage() {
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400">
                         Description / Product
                       </th>
-                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-32">
-                        Weight/Qty
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-24">
+                        Qty
                       </th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-24">
+                        Unit Wt
+                      </th>
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-24">
+                        Total Wt
+                      </th>
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-20">
                         Months
                       </th>
-                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-32">
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-28">
                         Rate (₹)
                       </th>
-                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-24">
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-20">
                         Tax (%)
                       </th>
-                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 text-right w-40">
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 text-right w-32">
                         Total (₹)
                       </th>
                       <th className="px-6 py-4 text-center w-20"></th>
@@ -1598,11 +1657,29 @@ export default function QuotationPage() {
                         <td className="px-6 py-4">
                           <input
                             type="number"
-                            value={item.weight || item.quantity}
+                            value={item.quantity || 0}
                             onChange={(e) =>
-                              updateLineItem(idx, "weight", e.target.value)
+                              updateLineItem(idx, "quantity", e.target.value)
                             }
                             className="w-full bg-neutral-100 dark:bg-neutral-800/50 border-0 rounded-lg px-2 py-1.5 font-bold focus:ring-1 focus:ring-indigo-500 outline-none h-10 shadow-sm"
+                          />
+                        </td>
+                        <td className="px-6 py-4">
+                          <input
+                            type="number"
+                            value={item.unitWeight || 0}
+                            onChange={(e) =>
+                              updateLineItem(idx, "unitWeight", e.target.value)
+                            }
+                            className="w-full bg-neutral-100 dark:bg-neutral-800/50 border-0 rounded-lg px-2 py-1.5 font-bold focus:ring-1 focus:ring-indigo-500 outline-none h-10 shadow-sm"
+                          />
+                        </td>
+                        <td className="px-6 py-4">
+                          <input
+                            type="number"
+                            readOnly
+                            value={item.weight || 0}
+                            className="w-full bg-neutral-50 dark:bg-neutral-900 border-0 rounded-lg px-2 py-1.5 font-bold outline-none cursor-not-allowed text-neutral-400"
                           />
                         </td>
                         <td className="px-6 py-4">
@@ -2109,10 +2186,10 @@ export default function QuotationPage() {
                           Qty
                         </div>
                         <div className="px-1 flex items-center justify-center border-r border-slate-900">
-                          Weight
+                          Unit.Wt
                         </div>
                         <div className="px-1 flex items-center justify-center border-r border-slate-900">
-                          Rem.
+                          Tot.Wt
                         </div>
                         <div className="px-1 flex items-center justify-center border-r border-slate-900">
                           Price
@@ -2130,7 +2207,7 @@ export default function QuotationPage() {
                         {pageItems.map((item: any, idx: number) => (
                           <div
                             key={idx}
-                            className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] text-center border-b border-black/20 items-stretch min-h-[32px]"
+                            className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] text-center border-b border-black/20 items-stretch min-h-8"
                           >
                             <div
                               className="px-2 py-1.5 text-left uppercase break-all border-r border-black/20 flex items-center"
@@ -2150,10 +2227,10 @@ export default function QuotationPage() {
                               {item.quantity || 0}
                             </div>
                             <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                              {item.weight || 0}
+                              {item.unitWeight || 0}
                             </div>
                             <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                              {item.remainingQuantity || item.remaining || 0}
+                              {item.weight || 0}
                             </div>
                             <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
                               {Number(item.price || item.rate || 0).toFixed(2)}
@@ -2172,16 +2249,16 @@ export default function QuotationPage() {
                         ))}
                         {/* Empty fill to stretch */}
                         <div className="flex-1 grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] items-stretch">
-                          <div className="border-r border-black/20"></div>
-                          <div className="border-r border-black/20"></div>
-                          <div className="border-r border-black/20"></div>
-                          <div className="border-r border-black/20"></div>
-                          <div className="border-r border-black/20"></div>
-                          <div className="border-r border-black/20"></div>
-                          <div className="border-r border-black/20"></div>
-                          <div className="border-r border-black/20"></div>
-                          <div></div>
-                        </div>
+                           <div className="border-r border-black/20"></div>
+                           <div className="border-r border-black/20"></div>
+                           <div className="border-r border-black/20"></div>
+                           <div className="border-r border-black/20"></div>
+                           <div className="border-r border-black/20"></div>
+                           <div className="border-r border-black/20"></div>
+                           <div className="border-r border-black/20"></div>
+                           <div className="border-r border-black/20"></div>
+                           <div></div>
+                         </div>
                       </div>
 
                       {/* Totals Row - ONLY ON LAST PAGE */}

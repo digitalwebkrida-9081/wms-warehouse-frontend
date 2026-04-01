@@ -675,6 +675,7 @@ export default function BillingPage() {
     // Recalculate total for this item
     if (
       field === "quantity" ||
+      field === "unitWeight" ||
       field === "weight" ||
       field === "months" ||
       field === "rate" ||
@@ -684,8 +685,19 @@ export default function BillingPage() {
         field === "quantity"
           ? Number(value)
           : newLineItems[index].quantity || 0;
-      const weight =
-        field === "weight" ? Number(value) : newLineItems[index].weight || qty;
+      const unitWt = 
+        field === "unitWeight"
+          ? Number(value)
+          : newLineItems[index].unitWeight || 0;
+      
+      let weight = newLineItems[index].weight || 0;
+      if (field === "quantity" || field === "unitWeight") {
+        weight = Number((qty * unitWt).toFixed(2));
+        newLineItems[index].weight = weight;
+      } else if (field === "weight") {
+        weight = Number(value);
+      }
+      
       const months =
         field === "months" ? Number(value) : newLineItems[index].months || 1;
       const rate = field === "rate" ? Number(value) : newLineItems[index].rate;
@@ -1545,19 +1557,25 @@ export default function BillingPage() {
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400">
                         Description
                       </th>
-                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-32">
-                        Weight/Qty
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-24">
+                        Qty
                       </th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-24">
+                        Unit Wt
+                      </th>
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-24">
+                        Total Wt
+                      </th>
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-20">
                         Months
                       </th>
-                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-32">
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-28">
                         Rate (₹)
                       </th>
-                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-24">
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-20">
                         Tax (%)
                       </th>
-                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 text-right w-40">
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 text-right w-32">
                         Total (₹)
                       </th>
                     </tr>
@@ -1581,11 +1599,29 @@ export default function BillingPage() {
                         <td className="px-6 py-4">
                           <input
                             type="number"
-                            value={item.weight || item.quantity} // Default to weight, or fallback to quantity
+                            value={item.quantity || 0}
                             onChange={(e) =>
-                              updateLineItem(idx, "weight", e.target.value)
+                              updateLineItem(idx, "quantity", e.target.value)
                             }
                             className="w-full bg-neutral-100 dark:bg-neutral-800/50 border-0 rounded-lg px-2 py-1.5 font-bold focus:ring-1 focus:ring-indigo-500 outline-none"
+                          />
+                        </td>
+                        <td className="px-6 py-4">
+                          <input
+                            type="number"
+                            value={item.unitWeight || 0}
+                            onChange={(e) =>
+                              updateLineItem(idx, "unitWeight", e.target.value)
+                            }
+                            className="w-full bg-neutral-100 dark:bg-neutral-800/50 border-0 rounded-lg px-2 py-1.5 font-bold focus:ring-1 focus:ring-indigo-500 outline-none"
+                          />
+                        </td>
+                        <td className="px-6 py-4">
+                          <input
+                            type="number"
+                            readOnly
+                            value={item.weight || 0}
+                            className="w-full bg-neutral-50 dark:bg-neutral-900 border-0 rounded-lg px-2 py-1.5 font-bold outline-none cursor-not-allowed text-neutral-400"
                           />
                         </td>
                         <td className="px-6 py-4">
@@ -1890,7 +1926,7 @@ export default function BillingPage() {
       )}
       {/* Invoice Preview Modal */}
       {invoicePreviewData && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm print:bg-white print:z-auto print:block print:relative print:p-0 p-4">
+        <div className="fixed inset-0 z-100 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm print:bg-white print:z-auto print:block print:relative print:p-0 p-4">
           <div className="flex flex-col max-h-[95vh] w-full max-w-5xl bg-slate-100 rounded-lg shadow-2xl relative print:h-auto print:max-h-none print:shadow-none print:bg-white">
             {/* Modal Header controls (Hidden on Print) */}
             <div className="flex justify-between items-center p-4 bg-white border-b print:hidden rounded-t-lg">
@@ -2072,10 +2108,10 @@ export default function BillingPage() {
                           Qty
                         </div>
                         <div className="px-1 flex items-center justify-center border-r border-slate-900">
-                          Weight
+                          Unit.Wt
                         </div>
                         <div className="px-1 flex items-center justify-center border-r border-slate-900">
-                          Rem.
+                          Tot.Wt
                         </div>
                         <div className="px-1 flex items-center justify-center border-r border-slate-900">
                           Price
@@ -2093,7 +2129,7 @@ export default function BillingPage() {
                         {pageItems.map((item: any, idx: number) => (
                           <div
                             key={idx}
-                            className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] text-center border-b border-black/20 items-stretch min-h-[32px]"
+                            className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] text-center border-b border-black/20 items-stretch min-h-8"
                           >
                             <div
                               className="px-2 py-1.5 text-left uppercase break-all border-r border-black/20 flex items-center"
@@ -2113,10 +2149,10 @@ export default function BillingPage() {
                               {item.quantity || 0}
                             </div>
                             <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                              {item.weight || 0}
+                              {item.unitWeight || 0}
                             </div>
                             <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                              {item.remainingQuantity || item.remaining || 0}
+                              {item.weight || 0}
                             </div>
                             <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
                               {Number(item.price || item.rate || 0).toFixed(2)}

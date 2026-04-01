@@ -7,6 +7,7 @@ import { Inward } from '@/app/lib/db';
 import { authFetch } from '@/app/lib/auth-fetch';
 import { useToast } from '@/app/_components/ToastProvider';
 import { useConfirm } from '@/app/_components/ConfirmProvider';
+import { useLoading } from '@/app/_components/LoadingProvider';
 
 interface CompanySettings {
   companyName: string;
@@ -42,6 +43,7 @@ export default function InwardsPage({
 }) {
   const { showToast } = useToast();
   const confirm = useConfirm();
+  const { setIsLoading } = useLoading();
   const router = useRouter();
   const [inwards, setInwards] = useState<Inward[]>([]);
   const [parties, setParties] = useState<{id: string, name: string}[]>([]);
@@ -120,7 +122,7 @@ export default function InwardsPage({
   }, []);
 
   const fetchInwards = useCallback(async () => {
-
+    setIsLoading(true);
     try {
       const res = await authFetch(`/api/inwards?page=${page}&pageSize=${pageSize}&search=${encodeURIComponent(search)}`);
       if (!res.ok) {
@@ -132,8 +134,10 @@ export default function InwardsPage({
       setTotal(data.total || 0);
     } catch (error) {
       console.error('Failed to fetch inwards:', error);
+    } finally {
+      setIsLoading(false);
     }
-  }, [page, pageSize, search]);
+  }, [page, pageSize, search, setIsLoading]);
 
   useEffect(() => {
     fetchInwards();
@@ -178,6 +182,10 @@ export default function InwardsPage({
       setEditingInward(null);
       setFormData({
         inwardDate: new Date().toISOString().split('T')[0],
+        quantity: 0,
+        unitWeight: 0,
+        totalWeight: 0,
+        remainingWeight: 0,
       });
     }
     setIsModalOpen(true);
@@ -194,6 +202,7 @@ export default function InwardsPage({
     const url = editingInward ? `/api/inwards/${editingInward.id}` : '/api/inwards';
     const method = editingInward ? 'PUT' : 'POST';
     
+    setIsLoading(true);
     try {
       const res = await authFetch(url, {
         method,
@@ -203,6 +212,7 @@ export default function InwardsPage({
       if (res.ok) {
         closeModal();
         fetchInwards();
+        showToast('success', editingInward ? 'Inward updated successfully' : 'Inward created successfully');
       } else {
         const errorData = await res.json();
         showToast('error', `Failed to save inward: ${errorData.message || errorData.error || 'Unknown error'}`);
@@ -210,6 +220,8 @@ export default function InwardsPage({
     } catch (error) {
       console.error('Failed to save:', error);
       showToast('error', 'Network error while saving inward.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -221,6 +233,7 @@ export default function InwardsPage({
       confirmText: 'Delete Now'
     });
     if (!confirmed) return;
+    setIsLoading(true);
     try {
       const res = await authFetch(`/api/inwards/${id}`, { method: 'DELETE' });
       if (res.ok) {
@@ -228,6 +241,7 @@ export default function InwardsPage({
         const newSelected = new Set(selectedIds);
         newSelected.delete(id);
         setSelectedIds(newSelected);
+        showToast('success', 'Inward deleted successfully');
       } else {
         const errorData = await res.json();
         showToast('error', `Failed to delete inward: ${errorData.message || errorData.error || 'Unknown error'}`);
@@ -235,6 +249,8 @@ export default function InwardsPage({
     } catch (error) {
       console.error('Failed to delete:', error);
       showToast('error', 'Network error while deleting inward.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -251,6 +267,7 @@ export default function InwardsPage({
 
     if (!confirmed) return;
 
+    setIsLoading(true);
     try {
       const res = await authFetch('/api/inwards/bulk-delete', {
         method: 'POST',
@@ -269,6 +286,8 @@ export default function InwardsPage({
     } catch (error) {
       console.error('Bulk delete error:', error);
       showToast('error', 'Network error during bulk delete');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -278,6 +297,7 @@ export default function InwardsPage({
   };
 
   const confirmGenerateBill = async () => {
+    setIsLoading(true);
     try {
       const res = await authFetch('/api/billing/generate-from-inwards', {
         method: 'POST',
@@ -306,6 +326,8 @@ export default function InwardsPage({
     } catch (error: any) {
       console.error('Failed to generate bill:', error);
       showToast('error', `Error generating bill: ${error.message}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -314,6 +336,7 @@ export default function InwardsPage({
   };
 
   const handleDownloadPDF = async () => {
+    setIsLoading(true);
     try {
       const html2canvas = (await import('html2canvas-pro')).default;
       const { jsPDF } = await import('jspdf');
@@ -338,6 +361,8 @@ export default function InwardsPage({
     } catch (e) {
       console.error('Failed to generate PDF:', e);
       showToast('error', 'Could not download PDF. Please try printing to PDF instead.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -525,6 +550,7 @@ export default function InwardsPage({
                   </th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Inward Date</th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Qty</th>
+                  <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Unit Wt</th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Total Weight</th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Remaining</th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Party</th>
@@ -562,6 +588,9 @@ export default function InwardsPage({
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
                         {inward.quantity || 0}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
+                        {inward.unitWeight || 0} kg
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
                         {inward.totalWeight.toLocaleString()} kg
@@ -716,25 +745,53 @@ export default function InwardsPage({
                     min={0}
                     placeholder="e.g. 100"
                     value={formData.quantity === 0 ? "" : (formData.quantity || "")}
-                    onChange={(e) => setFormData({ ...formData, quantity: e.target.value === "" ? 0 : Number(e.target.value) })}
+                    onChange={(e) => {
+                      const qty = e.target.value === "" ? 0 : Number(e.target.value);
+                      const unitWt = formData.unitWeight || 0;
+                      const totalWt = qty * unitWt;
+                      setFormData({ 
+                        ...formData, 
+                        quantity: qty,
+                        totalWeight: totalWt,
+                        remainingWeight: editingInward ? formData.remainingWeight : totalWt
+                      });
+                    }}
                     className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Total Weight (kg) <span className="text-rose-500">*</span></label>
+                  <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Unit Weight (kg) <span className="text-rose-500">*</span></label>
                   <input
                     type="number"
                     required
                     min={0}
-                    placeholder="5000"
-                    value={formData.totalWeight === 0 ? "" : (formData.totalWeight || "")}
-                    onChange={(e) => setFormData({ 
-                      ...formData, 
-                      totalWeight: e.target.value === "" ? 0 : Number(e.target.value), 
-                      remainingWeight: editingInward ? formData.remainingWeight : (e.target.value === "" ? 0 : Number(e.target.value))
-                    })}
+                    step="0.01"
+                    placeholder="e.g. 50.0"
+                    value={formData.unitWeight === 0 ? "" : (formData.unitWeight || "")}
+                    onChange={(e) => {
+                      const unitWt = e.target.value === "" ? 0 : Number(e.target.value);
+                      const qty = formData.quantity || 0;
+                      const totalWt = qty * unitWt;
+                      setFormData({ 
+                        ...formData, 
+                        unitWeight: unitWt,
+                        totalWeight: totalWt,
+                        remainingWeight: editingInward ? formData.remainingWeight : totalWt
+                      });
+                    }}
                     className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Total Weight (kg)</label>
+                  <input
+                    type="number"
+                    readOnly
+                    placeholder="Calculated automatically"
+                    value={formData.totalWeight || ""}
+                    className="w-full px-4 py-2.5 bg-neutral-50 dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 font-bold shadow-sm cursor-not-allowed border-dashed"
                   />
                 </div>
 
@@ -1061,20 +1118,20 @@ export default function InwardsPage({
                     <div className="px-1 flex items-center justify-center border-r border-slate-900">In Date</div>
                     <div className="px-1 flex items-center justify-center border-r border-slate-900">Out Date</div>
                     <div className="px-1 flex items-center justify-center border-r border-slate-900">Qty</div>
-                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Weight</div>
-                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Rem.</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Unit.Wt</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Tot.Wt</div>
                     <div className="px-1 flex items-center justify-center border-r border-slate-900">Price</div>
                     <div className="px-1 flex items-center justify-center border-r border-slate-900">Mon.</div>
                     <div className="px-2 flex items-center justify-center">Amount</div>
                   </div>
 
                   {/* Items Rows */}
-                  <div className="flex-1 border-b border-black font-semibold text-[10px] flex flex-col min-h-[300px]">
+                  <div className="flex-1 border-b border-black font-semibold text-[10px] flex flex-col min-h-75">
                     {invoicePreviewData.bill.lineItems.map(
                       (item: any, idx: number) => (
                         <div
                           key={idx}
-                          className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] text-center border-b border-black/20 items-stretch min-h-[32px]"
+                          className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] text-center border-b border-black/20 items-stretch min-h-8"
                         >
                           <div
                             className="px-2 py-1.5 text-left uppercase break-all border-r border-black/20 flex items-center"
@@ -1086,22 +1143,26 @@ export default function InwardsPage({
                             {item.inDate || item.date || "-"}
                           </div>
                           <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                            {item.outDate || invoicePreviewData.bill.outwardDate || "-"}
+                            {item.outDate ||
+                              invoicePreviewData.bill.outwardDate ||
+                              "-"}
                           </div>
                           <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
                             {item.quantity || 0}
                           </div>
                           <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                            {item.weight || 0}
+                            {item.unitWeight || 0}
                           </div>
                           <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                            {item.remainingQuantity || item.remaining || 0}
+                            {item.weight || 0}
                           </div>
                           <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
                             {Number(item.price || item.rate || 0).toFixed(2)}
                           </div>
                           <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                            {invoicePreviewData.bill.storageMonths || item.months || 1}
+                            {invoicePreviewData.bill.storageMonths ||
+                              item.months ||
+                              1}
                           </div>
                           <div className="px-2 py-1.5 text-[10px] font-bold flex items-center justify-end">
                             {Number(item.amount || item.total || 0).toFixed(2)}

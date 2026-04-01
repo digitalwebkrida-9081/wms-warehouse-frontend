@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   CheckCircle2
 } from "lucide-react";
+import { useLoading } from "../_components/LoadingProvider";
 
 // Using relative path to trigger Next.js rewrites defined in next.config.ts
 const API_URL = ""; 
@@ -20,6 +21,7 @@ const API_URL = "";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { setIsLoading } = useLoading();
   const [isLogin, setIsLogin] = useState(true); // Toggle between Login and Register
   const [formData, setFormData] = useState({
     username: "",
@@ -36,6 +38,7 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsLoading(true);
     setLoading(true);
     setError("");
     setSuccess("");
@@ -67,6 +70,7 @@ export default function LoginPage() {
     } catch (err: any) {
       setError(err.message);
     } finally {
+      setIsLoading(false);
       setLoading(false);
     }
   };
