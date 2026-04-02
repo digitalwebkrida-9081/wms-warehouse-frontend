@@ -8,6 +8,7 @@ import { authFetch } from '@/app/lib/auth-fetch';
 import { useToast } from '@/app/_components/ToastProvider';
 import { useConfirm } from '@/app/_components/ConfirmProvider';
 import { useLoading } from '@/app/_components/LoadingProvider';
+import { formatDate } from '@/app/lib/utils';
 
 interface CompanySettings {
   companyName: string;
@@ -46,19 +47,19 @@ export default function InwardsPage({
   const { setIsLoading } = useLoading();
   const router = useRouter();
   const [inwards, setInwards] = useState<Inward[]>([]);
-  const [parties, setParties] = useState<{id: string, name: string}[]>([]);
-  const [products, setProducts] = useState<{id: string, name: string}[]>([]);
+  const [parties, setParties] = useState<{ id: string, name: string }[]>([]);
+  const [products, setProducts] = useState<{ id: string, name: string }[]>([]);
   const [total, setTotal] = useState(0);
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  
+
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isBillParamsModalOpen, setIsBillParamsModalOpen] = useState(false);
-  const [invoicePreviewData, setInvoicePreviewData] = useState<{bill: any, partyDetails: any} | null>(null);
+  const [invoicePreviewData, setInvoicePreviewData] = useState<{ bill: any, partyDetails: any } | null>(null);
   const [editingInward, setEditingInward] = useState<Inward | null>(null);
 
   // Form State
@@ -154,7 +155,7 @@ export default function InwardsPage({
   }, [search]);
 
 
-  
+
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
       const allIds = new Set(inwards.map(i => i.id));
@@ -201,7 +202,7 @@ export default function InwardsPage({
     e.preventDefault();
     const url = editingInward ? `/api/inwards/${editingInward.id}` : '/api/inwards';
     const method = editingInward ? 'PUT' : 'POST';
-    
+
     setIsLoading(true);
     try {
       const res = await authFetch(url, {
@@ -302,25 +303,25 @@ export default function InwardsPage({
       const res = await authFetch('/api/billing/generate-from-inwards', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           inwardIds: Array.from(selectedIds),
           billPeriod: `${billParams.month} ${billParams.year}`,
           gstRate: billParams.gst,
           outwardDate: billParams.outwardDate
         }),
       });
-      
+
       if (!res.ok) {
         const errorData = await res.json();
         throw new Error(errorData.message || 'Failed to generate bill');
       }
-      
+
       const data = await res.json();
       setIsBillParamsModalOpen(false);
       setSelectedIds(new Set());
       fetchInwards();
       showToast('success', 'Bill generated successfully!');
-      
+
       // Show Invoice Preview
       setInvoicePreviewData(data);
     } catch (error: any) {
@@ -343,19 +344,19 @@ export default function InwardsPage({
 
       const element = document.getElementById('invoice-content');
       if (!element) return;
-      
+
       const canvas = await html2canvas(element, { scale: 2, useCORS: true });
       const imgData = canvas.toDataURL('image/jpeg', 0.98);
-      
+
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
         format: 'a4'
       });
-      
+
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      
+
       pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
       pdf.save(`Invoice_${invoicePreviewData?.bill?.billNumber}.pdf`);
     } catch (e) {
@@ -455,7 +456,7 @@ export default function InwardsPage({
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 p-6 font-sans">
       <div className="max-w-7xl mx-auto space-y-6">
-        
+
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
           <div>
@@ -509,7 +510,7 @@ export default function InwardsPage({
                 className="block w-full pl-10 pr-3 py-2 border border-neutral-200 dark:border-neutral-700 rounded-lg bg-neutral-50 dark:bg-neutral-800 text-sm placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow"
               />
             </div>
-            
+
             {selectedIds.size > 0 && (
               <button
                 onClick={handleBulkDelete}
@@ -524,8 +525,8 @@ export default function InwardsPage({
               onClick={handleGenerateBill}
               disabled={selectedIds.size === 0}
               className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-sm transition-all whitespace-nowrap
-                ${selectedIds.size > 0 
-                  ? 'bg-neutral-900 hover:bg-neutral-800 text-white shadow-sm dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-100' 
+                ${selectedIds.size > 0
+                  ? 'bg-neutral-900 hover:bg-neutral-800 text-white shadow-sm dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-100'
                   : 'bg-neutral-100 text-neutral-400 cursor-not-allowed dark:bg-neutral-800 dark:text-neutral-500'}`}
             >
               <FileText className="w-4 h-4" />
@@ -584,7 +585,7 @@ export default function InwardsPage({
                         />
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                        {inward.inwardDate}
+                        {formatDate(inward.inwardDate)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
                         {inward.quantity || 0}
@@ -597,8 +598,8 @@ export default function InwardsPage({
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border
-                          ${inward.remainingWeight > 0 
-                            ? inward.remainingWeight === inward.totalWeight 
+                          ${inward.remainingWeight > 0
+                            ? inward.remainingWeight === inward.totalWeight
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
                               : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'
                             : 'bg-neutral-100 text-neutral-600 border-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:border-neutral-700'}`}>
@@ -655,7 +656,7 @@ export default function InwardsPage({
               </tbody>
             </table>
           </div>
-          
+
           {/* Pagination */}
           <div className="bg-neutral-50/50 dark:bg-neutral-800/20 px-6 py-4 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between">
             <div className="text-sm text-neutral-500 dark:text-neutral-400">
@@ -697,7 +698,7 @@ export default function InwardsPage({
                 </svg>
               </button>
             </div>
-            
+
             <form onSubmit={handleSave} className="flex flex-col flex-1 overflow-y-auto p-6 text-sm">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
@@ -749,8 +750,8 @@ export default function InwardsPage({
                       const qty = e.target.value === "" ? 0 : Number(e.target.value);
                       const unitWt = formData.unitWeight || 0;
                       const totalWt = qty * unitWt;
-                      setFormData({ 
-                        ...formData, 
+                      setFormData({
+                        ...formData,
                         quantity: qty,
                         totalWeight: totalWt,
                         remainingWeight: editingInward ? formData.remainingWeight : totalWt
@@ -773,8 +774,8 @@ export default function InwardsPage({
                       const unitWt = e.target.value === "" ? 0 : Number(e.target.value);
                       const qty = formData.quantity || 0;
                       const totalWt = qty * unitWt;
-                      setFormData({ 
-                        ...formData, 
+                      setFormData({
+                        ...formData,
                         unitWeight: unitWt,
                         totalWeight: totalWt,
                         remainingWeight: editingInward ? formData.remainingWeight : totalWt
@@ -879,7 +880,7 @@ export default function InwardsPage({
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <div className="p-6 space-y-6">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -938,7 +939,7 @@ export default function InwardsPage({
 
               <div className="bg-amber-50 dark:bg-amber-950/20 p-4 rounded-2xl border border-amber-100 dark:border-amber-900/40">
                 <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
-                   Generating a bill for <span className="font-bold">{selectedIds.size}</span> selected inward {selectedIds.size === 1 ? 'entry' : 'entries'}. This action will create a formal invoice.
+                  Generating a bill for <span className="font-bold">{selectedIds.size}</span> selected inward {selectedIds.size === 1 ? 'entry' : 'entries'}. This action will create a formal invoice.
                 </p>
               </div>
             </div>
@@ -1108,11 +1109,10 @@ export default function InwardsPage({
                         <div>CASH/CREDIT Memo</div>
                         <div>SAC: {companySettings?.sacCode || "996721"}</div>
                         <div>Bill No: {invoicePreviewData.bill.billNumber}</div>
+                        <div>Date: {formatDate(new Date().toISOString())}</div>
                       </div>
                     </div>
-                  </div>
-
-                  {/* Product Header */}
+                  </div>                  {/* Product Header */}
                   <div className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] bg-neutral-50/50 border-y-2 border-slate-900 text-[10px] font-black uppercase text-center items-stretch h-10">
                     <div className="px-2 flex items-center border-r border-slate-900 text-left">Product</div>
                     <div className="px-1 flex items-center justify-center border-r border-slate-900">In Date</div>
@@ -1125,65 +1125,76 @@ export default function InwardsPage({
                     <div className="px-2 flex items-center justify-center">Amount</div>
                   </div>
 
-                  {/* Items Rows */}
-                  <div className="flex-1 border-b border-black font-semibold text-[10px] flex flex-col min-h-75">
-                    {invoicePreviewData.bill.lineItems.map(
-                      (item: any, idx: number) => (
-                        <div
-                          key={idx}
-                          className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] text-center border-b border-black/20 items-stretch min-h-8"
-                        >
+                  {(() => {
+                    const items = invoicePreviewData.bill.lineItems;
+                    const totalQty = items.reduce((sum: number, item: any) => sum + (Number(item.quantity) || 0), 0);
+                    const totalWt = items.reduce((sum: number, item: any) => sum + (Number(item.weight) || 0), 0);
+                    return (
+                      <div className="flex-1 border-b border-black font-semibold text-[10px] flex flex-col min-h-75">
+                        {items.map((item: any, idx: number) => (
                           <div
-                            className="px-2 py-1.5 text-left uppercase break-all border-r border-black/20 flex items-center"
-                            title={item.description}
+                            key={idx}
+                            className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] text-center border-b border-black/20 items-stretch min-h-8"
                           >
-                            {item.description}
+                            <div
+                              className="px-2 py-1.5 text-left uppercase break-all border-r border-black/20 flex items-center"
+                              title={item.description}
+                            >
+                              {item.description}
+                            </div>
+                            <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                              {formatDate(item.inDate || item.date)}
+                            </div>
+                            <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                              {formatDate(item.outDate || invoicePreviewData.bill.outwardDate)}
+                            </div>
+                            <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                              {item.quantity || 0}
+                            </div>
+                            <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                              {item.unitWeight || 0}
+                            </div>
+                            <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                              {item.weight || 0}
+                            </div>
+                            <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                              {Number(item.price || item.rate || 0).toFixed(2)}
+                            </div>
+                            <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
+                              {invoicePreviewData.bill.storageMonths ||
+                                item.months ||
+                                1}
+                            </div>
+                            <div className="px-2 py-1.5 text-[10px] font-bold flex items-center justify-end">
+                              {Number(item.amount || item.total || 0).toFixed(2)}
+                            </div>
                           </div>
-                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                            {item.inDate || item.date || "-"}
-                          </div>
-                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                            {item.outDate ||
-                              invoicePreviewData.bill.outwardDate ||
-                              "-"}
-                          </div>
-                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                            {item.quantity || 0}
-                          </div>
-                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                            {item.unitWeight || 0}
-                          </div>
-                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                            {item.weight || 0}
-                          </div>
-                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                            {Number(item.price || item.rate || 0).toFixed(2)}
-                          </div>
-                          <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                            {invoicePreviewData.bill.storageMonths ||
-                              item.months ||
-                              1}
-                          </div>
-                          <div className="px-2 py-1.5 text-[10px] font-bold flex items-center justify-end">
-                            {Number(item.amount || item.total || 0).toFixed(2)}
-                          </div>
-                        </div>
-                      )
-                    )}
-                    {/* Empty fill to stretch */}
-                    <div className="flex-1 grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] items-stretch">
-                      <div className="border-r border-black/20"></div>
-                      <div className="border-r border-black/20"></div>
-                      <div className="border-r border-black/20"></div>
-                      <div className="border-r border-black/20"></div>
-                      <div className="border-r border-black/20"></div>
-                      <div className="border-r border-black/20"></div>
-                      <div className="border-r border-black/20"></div>
-                      <div className="border-r border-black/20"></div>
-                      <div></div>
-                    </div>
-                  </div>
+                        ))}
 
+                        {/* Empty fill to stretch */}
+                        <div className="flex-1 grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] items-stretch">
+                          <div className="border-r border-black/20"></div>
+                          <div className="border-r border-black/20"></div>
+                          <div className="border-r border-black/20"></div>
+                          <div className="border-r border-black/20"></div>
+                          <div className="border-r border-black/20"></div>
+                          <div className="border-r border-black/20"></div>
+                          <div className="border-r border-black/20"></div>
+                          <div className="border-r border-black/20"></div>
+                          <div></div>
+                        </div>
+
+                        {/* Totals Row */}
+                        <div className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] border-t-2 border-black font-black bg-neutral-50/50 items-center min-h-8 text-center">
+                          <div className="col-span-3 px-2 text-right border-r border-black/20 uppercase tracking-tighter pr-4">Total:</div>
+                          <div className="px-1 border-r border-black/20 flex items-center justify-center h-full">{totalQty}</div>
+                          <div className="px-1 border-r border-black/20"></div>
+                          <div className="px-1 border-r border-black/20 flex items-center justify-center h-full">{totalWt.toFixed(2)}</div>
+                          <div className="col-span-3"></div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {/* Totals & Remarks Row */}
                   <div className="flex border-b border-black h-36">
                     <div className="w-1/2 p-4 font-semibold text-xs border-r border-black flex flex-col gap-1.5 font-mono leading-tight bg-slate-50/30">
@@ -1321,7 +1332,7 @@ export default function InwardsPage({
                       {/* Signature Image Container - Absolute Positioning to prevent layout shifts */}
                       <div className="absolute top-2 bottom-14 left-4 right-4 flex items-center justify-center pointer-events-none">
                         {companySettings?.signatureUrl && (
-                          <img 
+                          <img
                             src={companySettings.signatureUrl}
                             alt="Signature"
                             className="max-h-full max-w-full object-contain mix-blend-multiply"
@@ -1348,7 +1359,7 @@ export default function InwardsPage({
                     SUBJECT TO {companySettings?.jurisdiction || "SURAT"}{" "}
                     JURISDICTION —{" "}
                     {companySettings?.footerText ||
-                      "THIS IS A COMPUTER GENERATED DOCUMENT"}
+                      "THIS IS A COMPUTER GENERATED DOCUMENT"} — GENERATED ON: {formatDate(new Date().toISOString())}
                   </div>
                 </div>
               </div>

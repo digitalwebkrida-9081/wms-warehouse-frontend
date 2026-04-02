@@ -6,6 +6,7 @@ import { Expense } from '@/app/lib/db';
 import { authFetch } from '@/app/lib/auth-fetch';
 import { useToast } from '@/app/_components/ToastProvider';
 import { useConfirm } from '@/app/_components/ConfirmProvider';
+import { formatDate } from '@/app/lib/utils';
 
 export default function ExpensePage() {
   const { showToast } = useToast();
@@ -288,7 +289,7 @@ export default function ExpensePage() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-neutral-600 dark:text-neutral-400">
-                        {expense.date}
+                        {formatDate(expense.date)}
                       </td>
                       <td className="px-6 py-4 text-sm text-neutral-500 dark:text-neutral-400 max-w-xs truncate">
                         {expense.notes || '-'}

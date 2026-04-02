@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, Wallet, ArrowDownCircle, ArrowUpCircle, User, MapPin, Phone, Mail, FileText, ChevronDown } from 'lucide-react';
 import { authFetch } from '@/app/lib/auth-fetch';
+import { formatDate } from '@/app/lib/utils';
 
 export default function LedgerPage() {
   const [selectedRoom, setSelectedRoom] = useState('');
@@ -146,7 +147,7 @@ export default function LedgerPage() {
                 <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
                   {transactions.map((tr: any, idx: number) => (
                     <tr key={idx} className="hover:bg-neutral-50/50 dark:hover:bg-neutral-800/30 transition-colors group">
-                      <td className="px-8 py-4 text-neutral-700 dark:text-neutral-300 font-medium">{tr.date}</td>
+                      <td className="px-8 py-4 text-neutral-700 dark:text-neutral-300 font-medium">{formatDate(tr.date)}</td>
                       <td className="px-8 py-4 text-neutral-900 dark:text-neutral-100 font-bold">{tr.billNo}</td>
                       <td className="px-8 py-4 text-rose-600 font-bold">{tr.debit ? `₹${tr.debit}` : '-'}</td>
                       <td className="px-8 py-4 text-emerald-600 font-bold">{tr.credit ? `₹${tr.credit}` : '-'}</td>

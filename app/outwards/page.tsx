@@ -1,16 +1,17 @@
 "use client";
 import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { 
-  Plus, Search, MoreVertical, Edit2, Trash2, ArrowRightCircle, 
+import {
+  Plus, Search, MoreVertical, Edit2, Trash2, ArrowRightCircle,
   FileText, CheckCircle2, ChevronLeft, ChevronRight, Download,
-  X, Printer, FileDown, Calculator 
+  X, Printer, FileDown, Calculator
 } from 'lucide-react';
 import { Inward, Outward } from '@/app/lib/db';
 import { authFetch } from '@/app/lib/auth-fetch';
 import { useToast } from '@/app/_components/ToastProvider';
 import { useConfirm } from '@/app/_components/ConfirmProvider';
 import { useLoading } from '@/app/_components/LoadingProvider';
+import { formatDate } from '@/app/lib/utils';
 
 interface CompanySettings {
   companyName: string;
@@ -66,7 +67,7 @@ function OutwardsContent() {
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  
+
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingOutward, setEditingOutward] = useState<Outward | null>(null);
@@ -215,7 +216,7 @@ function OutwardsContent() {
     e.preventDefault();
     const url = editingOutward ? `/api/outward/${editingOutward.id}` : '/api/outward';
     const method = editingOutward ? 'PUT' : 'POST';
-    
+
     setIsLoading(true);
     try {
       // Ensure we only send the ID, not the populated object if it somehow got in there
@@ -320,7 +321,7 @@ function OutwardsContent() {
       const res = await authFetch('/api/billing/generate-from-outward', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           outwardIds: Array.from(selectedIds),
           billPeriod: `${billParams.month} ${billParams.year}`,
           gstRate: billParams.gst,
@@ -338,7 +339,7 @@ function OutwardsContent() {
       setSelectedIds(new Set());
       fetchOutwards();
       showToast('success', 'Bill generated successfully!');
-      
+
       // Show Invoice Preview
       setInvoicePreviewData(data);
     } catch (error: any) {
@@ -422,7 +423,7 @@ function OutwardsContent() {
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 p-6 font-sans">
       <div className="max-w-7xl mx-auto space-y-6">
-        
+
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
           <div>
@@ -476,7 +477,7 @@ function OutwardsContent() {
                 className="block w-full pl-10 pr-3 py-2 border border-neutral-200 dark:border-neutral-700 rounded-lg bg-neutral-50 dark:bg-neutral-800 text-sm placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow"
               />
             </div>
-            
+
             {selectedIds.size > 0 && (
               <button
                 onClick={handleBulkDelete}
@@ -491,8 +492,8 @@ function OutwardsContent() {
               onClick={handleGenerateBill}
               disabled={selectedIds.size === 0}
               className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-sm transition-all whitespace-nowrap
-                ${selectedIds.size > 0 
-                  ? 'bg-neutral-900 hover:bg-neutral-800 text-white shadow-sm dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-100' 
+                ${selectedIds.size > 0
+                  ? 'bg-neutral-900 hover:bg-neutral-800 text-white shadow-sm dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-100'
                   : 'bg-neutral-100 text-neutral-400 cursor-not-allowed dark:bg-neutral-800 dark:text-neutral-500'}`}
             >
               <FileText className="w-4 h-4" />
@@ -519,7 +520,7 @@ function OutwardsContent() {
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Total Weight</th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Remaining</th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Party</th>
-                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Product</th>
+                  <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Product</th>
                   <th scope="col" className="px-6 py-4 text-center text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider bg-indigo-50/50 dark:bg-indigo-500/10">Outward Wt</th>
                   <th scope="col" className="px-6 py-4 text-center text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider bg-emerald-50/50 dark:bg-emerald-500/10">Outward Qty</th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Goods Condition</th>
@@ -551,14 +552,14 @@ function OutwardsContent() {
                         />
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                        {outward.inwardDetails?.inwardDate || '-'}
+                        {formatDate(outward.inwardDetails?.inwardDate)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
                         {outward.inwardDetails?.totalWeight?.toLocaleString() || '0'} kg
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border
-                          ${(outward.inwardDetails?.remainingWeight || 0) > 0 
+                          ${(outward.inwardDetails?.remainingWeight || 0) > 0
                             ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'
                             : 'bg-neutral-100 text-neutral-600 border-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:border-neutral-700'}`}>
                           {outward.inwardDetails?.remainingWeight?.toLocaleString() || '0'} kg
@@ -620,7 +621,7 @@ function OutwardsContent() {
               </tbody>
             </table>
           </div>
-          
+
           {/* Pagination */}
           <div className="bg-neutral-50/50 dark:bg-neutral-800/20 px-6 py-4 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between">
             <div className="text-sm text-neutral-500 dark:text-neutral-400">
@@ -662,10 +663,10 @@ function OutwardsContent() {
                 </svg>
               </button>
             </div>
-            
+
             <form onSubmit={handleSave} className="flex flex-col flex-1 overflow-y-auto p-6 text-sm">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                
+
                 <div className="col-span-1 md:col-span-2 space-y-2">
                   <label className="block font-medium text-neutral-700 dark:text-neutral-300">Select Inward (Party - Product - Date) <span className="text-red-500">*</span></label>
                   <select
@@ -677,7 +678,7 @@ function OutwardsContent() {
                     <option value="" disabled>Select an Inward entry</option>
                     {inwards.map(i => (
                       <option key={i.id} value={i.id}>
-                        {i.partyId} - {i.productId} ({i.inwardDate}) - Rem: {i.remainingWeight}kg / {i.remainingQuantity ?? i.quantity ?? 0} qty (Unit: {i.unitWeight}kg)
+                        {i.partyId} - {i.productId} ({formatDate(i.inwardDate)}) - Rem: {i.remainingWeight}kg / {i.remainingQuantity ?? i.quantity ?? 0} qty (Unit: {i.unitWeight}kg)
                       </option>
                     ))}
                   </select>
@@ -704,8 +705,8 @@ function OutwardsContent() {
                     onChange={(e) => {
                       const qty = Number(e.target.value);
                       const unitWt = formData.unitWeight || 0;
-                      setFormData({ 
-                        ...formData, 
+                      setFormData({
+                        ...formData,
                         quantity: qty,
                         outwardWeight: Number((qty * unitWt).toFixed(2))
                       });
@@ -794,7 +795,7 @@ function OutwardsContent() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <div className="p-6 space-y-6">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -853,7 +854,7 @@ function OutwardsContent() {
 
               <div className="bg-amber-50 dark:bg-amber-950/20 p-4 rounded-2xl border border-amber-100 dark:border-amber-900/40">
                 <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
-                   Generating a bill for <span className="font-bold">{selectedIds.size}</span> selected outward {selectedIds.size === 1 ? 'entry' : 'entries'}. This action will create a formal invoice.
+                  Generating a bill for <span className="font-bold">{selectedIds.size}</span> selected outward {selectedIds.size === 1 ? 'entry' : 'entries'}. This action will create a formal invoice.
                 </p>
               </div>
             </div>
@@ -904,9 +905,11 @@ function OutwardsContent() {
 
             {/* A4 Printable Area */}
             <div className="flex-1 overflow-auto p-4 print:p-0 print:overflow-visible custom-scrollbar flex flex-col items-center gap-8 print:gap-0">
-               {(() => {
+              {(() => {
                 const ITEMS_PER_PAGE = 10;
                 const items = invoicePreviewData.bill.lineItems;
+                const totalQty = items.reduce((sum: number, item: any) => sum + (Number(item.quantity) || 0), 0);
+                const totalWt = items.reduce((sum: number, item: any) => sum + (Number(item.weight) || 0), 0);
                 const chunks = [];
                 for (let i = 0; i < items.length; i += ITEMS_PER_PAGE) {
                   chunks.push(items.slice(i, i + ITEMS_PER_PAGE));
@@ -1022,6 +1025,9 @@ function OutwardsContent() {
                             <div>
                               Bill No: {invoicePreviewData.bill.billNumber}
                             </div>
+                            <div>
+                              Date: {formatDate(new Date().toISOString())}
+                            </div>
                             <div className="text-[10px] text-slate-400 capitalize">
                               Page {pageIdx + 1} of {chunks.length}
                             </div>
@@ -1074,10 +1080,10 @@ function OutwardsContent() {
                               {item.description}
                             </div>
                             <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                              {item.inDate || "-"}
+                              {formatDate(item.inDate)}
                             </div>
                             <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                              {item.outDate || "-"}
+                              {formatDate(item.outDate)}
                             </div>
                             <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
                               {item.quantity || 0}
@@ -1099,6 +1105,7 @@ function OutwardsContent() {
                             </div>
                           </div>
                         ))}
+
                         {/* Empty fill to stretch */}
                         <div className="flex-1 grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] items-stretch">
                           <div className="border-r border-black/20"></div>
@@ -1111,6 +1118,17 @@ function OutwardsContent() {
                           <div className="border-r border-black/20"></div>
                           <div></div>
                         </div>
+
+                        {/* Totals Row - ONLY ON LAST PAGE */}
+                        {pageIdx === chunks.length - 1 && (
+                          <div className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] border-t-2 border-black font-black bg-neutral-50/50 items-center min-h-8 text-center text-black">
+                            <div className="col-span-3 px-2 text-right border-r border-black/20 uppercase tracking-tighter pr-4">Total:</div>
+                            <div className="px-1 border-r border-black/20 flex items-center justify-center h-full">{totalQty}</div>
+                            <div className="px-1 border-r border-black/20"></div>
+                            <div className="px-1 border-r border-black/20 flex items-center justify-center h-full">{totalWt.toFixed(2)}</div>
+                            <div className="col-span-3"></div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Totals Row - ONLY ON LAST PAGE */}
@@ -1221,7 +1239,7 @@ function OutwardsContent() {
                                 Terms & Conditions:
                               </p>
                               {companySettings?.termsAndConditions &&
-                              companySettings.termsAndConditions.length > 0 ? (
+                                companySettings.termsAndConditions.length > 0 ? (
                                 companySettings.termsAndConditions.map(
                                   (term, idx) => (
                                     <p key={idx}>
@@ -1274,7 +1292,7 @@ function OutwardsContent() {
                         SUBJECT TO {companySettings?.jurisdiction || "SURAT"}{" "}
                         JURISDICTION —{" "}
                         {companySettings?.footerText ||
-                          "THIS IS A COMPUTER GENERATED DOCUMENT"}
+                          "THIS IS A COMPUTER GENERATED DOCUMENT"} — GENERATED ON: {formatDate(new Date().toISOString())}
                       </div>
                     </div>
                   </div>

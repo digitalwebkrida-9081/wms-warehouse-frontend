@@ -28,6 +28,7 @@ import { Bill } from "@/app/lib/db";
 import { authFetch } from "@/app/lib/auth-fetch";
 import { useToast } from "@/app/_components/ToastProvider";
 import { useConfirm } from "@/app/_components/ConfirmProvider";
+import { formatDate } from "@/app/lib/utils";
 
 interface CompanySettings {
   companyName: string;
@@ -106,20 +107,20 @@ export default function BillingPage() {
   const [billFormData, setBillFormData] = useState<Partial<Bill>>({});
 
   interface LineItem {
-  productId: string;
-  description: string;
-  quantity: number;
-  weight: number;
-  remainingQuantity: number;
-  remaining?: number; // Fallback
-  price: number;
-  rate?: number; // Fallback
-  amount: number;
-  total?: number; // Fallback
-  inDate?: string;
-  date?: string; // Fallback
-  inwardId?: string;
-}
+    productId: string;
+    description: string;
+    quantity: number;
+    weight: number;
+    remainingQuantity: number;
+    remaining?: number; // Fallback
+    price: number;
+    rate?: number; // Fallback
+    amount: number;
+    total?: number; // Fallback
+    inDate?: string;
+    date?: string; // Fallback
+    inwardId?: string;
+  }
 
   const products = ["KESAR RAS GREEN DORI", "ALPHONSO MANGO", "FROZEN PEAS"];
 
@@ -451,10 +452,10 @@ export default function BillingPage() {
         const imgData = canvas.toDataURL("image/jpeg", 0.98);
 
         if (i > 0) pdf.addPage();
-        
+
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const pdfHeight = pdf.internal.pageSize.getHeight();
-        
+
         pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, pdfHeight);
       }
 
@@ -469,7 +470,7 @@ export default function BillingPage() {
     try {
       // Refresh company settings to ensure latest data
       await fetchCompanySettings();
-  
+
       // Fetch party info
       const partyResponse = await authFetch(
         `/api/party?pageSize=1&search=${encodeURIComponent(bill.partyId)}`,
@@ -478,7 +479,7 @@ export default function BillingPage() {
         throw new Error('Failed to fetch party details');
       }
       const partyData = await partyResponse.json();
-  
+
       setInvoicePreviewData({
         bill,
         partyDetails: partyData?.data?.[0] || {},
@@ -677,7 +678,6 @@ export default function BillingPage() {
       field === "quantity" ||
       field === "unitWeight" ||
       field === "weight" ||
-      field === "months" ||
       field === "rate" ||
       field === "tax"
     ) {
@@ -685,11 +685,11 @@ export default function BillingPage() {
         field === "quantity"
           ? Number(value)
           : newLineItems[index].quantity || 0;
-      const unitWt = 
+      const unitWt =
         field === "unitWeight"
           ? Number(value)
           : newLineItems[index].unitWeight || 0;
-      
+
       let weight = newLineItems[index].weight || 0;
       if (field === "quantity" || field === "unitWeight") {
         weight = Number((qty * unitWt).toFixed(2));
@@ -697,27 +697,22 @@ export default function BillingPage() {
       } else if (field === "weight") {
         weight = Number(value);
       }
-      
-      const months =
-        field === "months" ? Number(value) : newLineItems[index].months || 1;
-      const rate = field === "rate" ? Number(value) : newLineItems[index].rate;
-      const taxPercent =
-        field === "tax" ? Number(value) : newLineItems[index].tax;
 
-      const sub = weight * rate * months;
-      const taxAmt = (sub * taxPercent) / 100;
-      newLineItems[index].total = sub + taxAmt;
+      const rate = field === "rate" ? Number(value) : newLineItems[index].rate || 0;
+      const amt = qty * rate;
+      newLineItems[index].total = amt;
+      newLineItems[index].amount = amt;
     }
 
     // Recalculate grand totals
     let subTotal = 0;
     let taxTotal = 0;
     newLineItems.forEach((item: any) => {
-      const w = item.weight || item.quantity || 0;
-      const m = item.months || 1;
-      const s = w * item.rate * m;
-      subTotal += s;
-      taxTotal += (s * item.tax) / 100;
+      const qty = item.quantity || 0;
+      const rate = item.rate || 0;
+      const amt = qty * rate;
+      subTotal += amt;
+      taxTotal += (amt * (item.tax || 0)) / 100;
     });
 
     setBillPreview({
@@ -955,7 +950,7 @@ export default function BillingPage() {
                           />
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                          {inward.inwardDate}
+                          {formatDate(inward.inwardDate)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-neutral-700 dark:text-neutral-300">
                           {inward.totalWeight.toLocaleString()}{" "}
@@ -1122,10 +1117,10 @@ export default function BillingPage() {
                           {bill.billNumber}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-neutral-600 dark:text-neutral-400">
-                          {bill.date}
+                          {formatDate(bill.date)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-neutral-600 dark:text-neutral-400">
-                          {bill.outwardDate || "-"}
+                          {formatDate(bill.outwardDate) || "-"}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-neutral-900 dark:text-neutral-100">
                           {bill.partyId}
@@ -1829,12 +1824,17 @@ export default function BillingPage() {
                       min={0}
                       max={100}
                       value={billFormData.gst || 0}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const newGst = Number(e.target.value);
+                        const subTotal = billFormData.subTotal || 0;
+                        const taxTotal = (subTotal * newGst) / 100;
                         setBillFormData({
                           ...billFormData,
-                          gst: Number(e.target.value),
-                        })
-                      }
+                          gst: newGst,
+                          taxTotal,
+                          grandTotal: subTotal + taxTotal
+                        });
+                      }}
                       className="w-full pl-10 pr-4 py-3 bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 rounded-2xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
                     />
                   </div>
@@ -1963,6 +1963,8 @@ export default function BillingPage() {
               {(() => {
                 const ITEMS_PER_PAGE = 10;
                 const items = invoicePreviewData.bill.lineItems;
+                const totalQty = items.reduce((sum: number, item: any) => sum + (Number(item.quantity) || 0), 0);
+                const totalWt = items.reduce((sum: number, item: any) => sum + (Number(item.weight) || 0), 0);
                 const chunks = [];
                 for (let i = 0; i < items.length; i += ITEMS_PER_PAGE) {
                   chunks.push(items.slice(i, i + ITEMS_PER_PAGE));
@@ -2086,6 +2088,9 @@ export default function BillingPage() {
                             <div>
                               Bill No: {invoicePreviewData.bill.billNumber}
                             </div>
+                            <div>
+                              Date: {formatDate(new Date().toISOString())}
+                            </div>
                             <div className="text-[10px] text-slate-400">
                               Page {pageIdx + 1} of {chunks.length}
                             </div>
@@ -2138,12 +2143,11 @@ export default function BillingPage() {
                               {item.description}
                             </div>
                             <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                              {item.inDate || item.date || "-"}
+                              {formatDate(item.inDate || item.date)}
                             </div>
                             <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                              {item.outDate ||
-                                invoicePreviewData.bill.outwardDate ||
-                                "-"}
+                              {formatDate(item.outDate ||
+                                invoicePreviewData.bill.outwardDate)}
                             </div>
                             <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
                               {item.quantity || 0}
@@ -2169,6 +2173,7 @@ export default function BillingPage() {
                             </div>
                           </div>
                         ))}
+
                         {/* Empty fill to stretch */}
                         <div className="flex-1 grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] items-stretch">
                           <div className="border-r border-black/20"></div>
@@ -2181,6 +2186,17 @@ export default function BillingPage() {
                           <div className="border-r border-black/20"></div>
                           <div></div>
                         </div>
+
+                        {/* Totals Row - ONLY ON LAST PAGE */}
+                        {pageIdx === chunks.length - 1 && (
+                          <div className="grid grid-cols-[3fr_2fr_2fr_1fr_1fr_1fr_1fr_1fr_2fr] border-t-2 border-black font-black bg-neutral-50/50 items-center min-h-8 text-center">
+                            <div className="col-span-3 px-2 text-right border-r border-black/20 uppercase tracking-tighter pr-4">Total:</div>
+                            <div className="px-1 border-r border-black/20 flex items-center justify-center h-full">{totalQty}</div>
+                            <div className="px-1 border-r border-black/20"></div>
+                            <div className="px-1 border-r border-black/20 flex items-center justify-center h-full">{totalWt.toFixed(2)}</div>
+                            <div className="col-span-3"></div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Totals & Remarks Row - ONLY ON LAST PAGE */}
@@ -2246,33 +2262,33 @@ export default function BillingPage() {
                                 </div>
                                 {(invoicePreviewData.bill.taxTotal || 0) >
                                   0 && (
-                                  <>
-                                    <div className="flex justify-between items-center">
-                                      <span className="text-slate-500 font-bold uppercase tracking-tighter">
-                                        SGST Total:
-                                      </span>{" "}
-                                      <span className="text-black">
-                                        ₹
-                                        {Number(
-                                          (invoicePreviewData.bill.taxTotal ||
-                                            0) / 2,
-                                        ).toFixed(2)}
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                      <span className="text-slate-500 font-bold uppercase tracking-tighter">
-                                        CGST Total:
-                                      </span>{" "}
-                                      <span className="text-black">
-                                        ₹
-                                        {Number(
-                                          (invoicePreviewData.bill.taxTotal ||
-                                            0) / 2,
-                                        ).toFixed(2)}
-                                      </span>
-                                    </div>
-                                  </>
-                                )}
+                                    <>
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-slate-500 font-bold uppercase tracking-tighter">
+                                          SGST Total:
+                                        </span>{" "}
+                                        <span className="text-black">
+                                          ₹
+                                          {Number(
+                                            (invoicePreviewData.bill.taxTotal ||
+                                              0) / 2,
+                                          ).toFixed(2)}
+                                        </span>
+                                      </div>
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-slate-500 font-bold uppercase tracking-tighter">
+                                          CGST Total:
+                                        </span>{" "}
+                                        <span className="text-black">
+                                          ₹
+                                          {Number(
+                                            (invoicePreviewData.bill.taxTotal ||
+                                              0) / 2,
+                                          ).toFixed(2)}
+                                        </span>
+                                      </div>
+                                    </>
+                                  )}
                               </div>
                               <div className="flex justify-between items-center border-t border-black pt-2 mt-2 text-lg font-black bg-slate-900 text-white p-2 rounded-lg">
                                 <span className="uppercase tracking-tighter text-xs text-indigo-300">
@@ -2307,7 +2323,7 @@ export default function BillingPage() {
                                 Terms & Conditions:
                               </p>
                               {companySettings?.termsAndConditions &&
-                              companySettings.termsAndConditions.length > 0 ? (
+                                companySettings.termsAndConditions.length > 0 ? (
                                 companySettings.termsAndConditions.map(
                                   (term, idx) => (
                                     <p key={idx}>
@@ -2361,7 +2377,7 @@ export default function BillingPage() {
                         </>
                       ) : (
                         <div className="flex-1 flex items-center justify-center border-b border-black bg-slate-50/30">
-                           <p className="text-xs font-black uppercase tracking-widest text-slate-400 italic">Continued on next page...</p>
+                          <p className="text-xs font-black uppercase tracking-widest text-slate-400 italic">Continued on next page...</p>
                         </div>
                       )}
 
@@ -2370,7 +2386,7 @@ export default function BillingPage() {
                         SUBJECT TO {companySettings?.jurisdiction || "SURAT"}{" "}
                         JURISDICTION —{" "}
                         {companySettings?.footerText ||
-                          "THIS IS A COMPUTER GENERATED DOCUMENT"}
+                          "THIS IS A COMPUTER GENERATED DOCUMENT"} — GENERATED ON: {formatDate(new Date().toISOString())}
                       </div>
                     </div>
                   </div>

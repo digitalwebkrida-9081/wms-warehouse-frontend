@@ -21,6 +21,7 @@ import { authFetch } from "@/app/lib/auth-fetch";
 import { useToast } from "@/app/_components/ToastProvider";
 import { useConfirm } from "@/app/_components/ConfirmProvider";
 import Cookies from "js-cookie";
+import { formatDate } from "@/app/lib/utils";
 
 interface User {
   _id: string;
@@ -212,7 +213,7 @@ export default function UserManagementPage() {
                       </span>
                     </td>
                     <td className="px-8 py-5 text-sm text-slate-500">
-                      {new Date(user.createdAt).toLocaleDateString()}
+                      {formatDate(user.createdAt)}
                     </td>
                     <td className="px-8 py-5 text-right">
                       {user.username !== Cookies.get("user-name") && (
