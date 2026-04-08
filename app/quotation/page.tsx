@@ -52,6 +52,7 @@ interface CompanySettings {
   termsAndConditions: string[];
   jurisdiction: string;
   signatureLabel: string;
+  signatureUrl: string;
   footerText: string;
 }
 
@@ -400,6 +401,9 @@ export default function QuotationPage() {
         taxTotal: 0,
         grandTotal: 0,
         outwardDate: new Date().toISOString().split("T")[0],
+        storageMonths: 1,
+        storageDays: 30,
+        billingCycle: 'months',
       });
       setIsQuotationModalOpen(true);
     } catch (error) {
@@ -437,7 +441,12 @@ export default function QuotationPage() {
       const res = await authFetch("/api/quotation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(quotationPreview),
+        body: JSON.stringify({
+          ...quotationPreview,
+          storageMonths: quotationPreview.storageMonths,
+          storageDays: quotationPreview.storageDays,
+          billingCycle: quotationPreview.billingCycle
+        }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -621,9 +630,18 @@ export default function QuotationPage() {
     return result + " Only";
   };
 
-  const handleEditQuotation = (quotation: Quotation) => {
+  const handleEditQuotation = (quotation: any) => {
+    const normalizedCharges = Array.isArray(quotation.additionalCharges) 
+      ? quotation.additionalCharges 
+      : (Number(quotation.additionalCharges) > 0 
+          ? [{ label: 'Manual Charges', chargeType: 'fixed', unit: '', value: 0, rate: 0, amount: Number(quotation.additionalCharges) }] 
+          : []);
+          
     setEditingQuotation(quotation);
-    setQuotationFormData(quotation);
+    setQuotationFormData({
+      ...quotation,
+      additionalCharges: normalizedCharges
+    });
     setIsEditQuotationModalOpen(true);
   };
 
@@ -635,7 +653,12 @@ export default function QuotationPage() {
       const res = await authFetch(`/api/quotation/${editingQuotation.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(quotationFormData),
+        body: JSON.stringify({
+          ...quotationFormData,
+          storageMonths: quotationFormData.storageMonths,
+          storageDays: quotationFormData.storageDays,
+          billingCycle: quotationFormData.billingCycle
+        }),
       });
       if (res.ok) {
         setIsEditQuotationModalOpen(false);
@@ -724,6 +747,7 @@ export default function QuotationPage() {
       field === "quantity" ||
       field === "unitWeight" ||
       field === "weight" ||
+      field === "months" ||
       field === "rate" ||
       field === "tax"
     ) {
@@ -745,7 +769,8 @@ export default function QuotationPage() {
       }
 
       const rate = field === "rate" ? Number(value) : newLineItems[index].rate || 0;
-      const amt = qty * rate;
+      const months = field === "months" ? Number(value) : newLineItems[index].months || 1;
+      const amt = Number((weight * rate * months).toFixed(2));
       newLineItems[index].total = amt;
       newLineItems[index].amount = amt;
     }
@@ -754,19 +779,24 @@ export default function QuotationPage() {
     let subTotal = 0;
     let taxTotal = 0;
     newLineItems.forEach((item: any) => {
-      const qty = item.quantity || 0;
+      const weight = item.weight || 0;
       const rate = item.rate || 0;
-      const amt = qty * rate;
+      const months = item.months || 1;
+      const amt = Number((weight * rate * months).toFixed(2));
       subTotal += amt;
       taxTotal += (amt * (item.tax || 0)) / 100;
     });
+
+    // Sum additional charges
+    const currentCharges = Array.isArray(quotationPreview.additionalCharges) ? quotationPreview.additionalCharges : [];
+    const additionalTotal = currentCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
 
     setQuotationPreview({
       ...quotationPreview,
       lineItems: newLineItems,
       subTotal,
       taxTotal,
-      grandTotal: subTotal + taxTotal,
+      grandTotal: subTotal + taxTotal + additionalTotal,
     });
   };
 
@@ -1593,6 +1623,87 @@ export default function QuotationPage() {
                     </p>
                   )}
                 </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                    Billing Cycle
+                  </label>
+                  <select
+                    value={quotationPreview.billingCycle || 'months'}
+                    onChange={(e) => {
+                      const newCycle = e.target.value as 'months' | 'days';
+                      const val = newCycle === 'days' ? (quotationPreview.storageDays || 30) : (quotationPreview.storageMonths || 1);
+                      const effMonths = newCycle === 'days' ? (val / 30) : val;
+                      
+                      const newLineItems = quotationPreview.lineItems.map((item: any) => {
+                        const amt = Number(((item.weight || 0) * (item.rate || 0) * effMonths).toFixed(2));
+                        return { ...item, months: effMonths, total: amt, amount: amt };
+                      });
+                      
+                      let subTotal = 0;
+                      let taxTotal = 0;
+                      newLineItems.forEach((item: any) => {
+                        subTotal += (item.total || 0);
+                        taxTotal += ((item.total || 0) * (item.tax || 0)) / 100;
+                      });
+
+                      const currentCharges = Array.isArray(quotationPreview.additionalCharges) ? quotationPreview.additionalCharges : [];
+                      const additionalTotal = currentCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+
+                      setQuotationPreview({
+                        ...quotationPreview,
+                        billingCycle: newCycle,
+                        lineItems: newLineItems,
+                        subTotal,
+                        taxTotal,
+                        grandTotal: subTotal + taxTotal + additionalTotal,
+                      });
+                    }}
+                    className="w-full px-4 py-3 bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 rounded-2xl font-bold text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  >
+                    <option value="months">Months-wise</option>
+                    <option value="days">Days-wise</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                    {quotationPreview.billingCycle === 'days' ? 'Storage Days' : 'Storage Months'}
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={(quotationPreview.billingCycle === 'days' ? quotationPreview.storageDays : quotationPreview.storageMonths) || (quotationPreview.billingCycle === 'days' ? 30 : 1)}
+                    onChange={(e) => {
+                      const newVal = Number(e.target.value) || 1;
+                      const newCycle = quotationPreview.billingCycle || 'months';
+                      const effMonths = newCycle === 'days' ? (newVal / 30) : newVal;
+                      
+                      const newLineItems = quotationPreview.lineItems.map((item: any) => {
+                        const amt = Number(((item.weight || 0) * (item.rate || 0) * effMonths).toFixed(2));
+                        return { ...item, months: effMonths, total: amt, amount: amt };
+                      });
+                      
+                      let subTotal = 0;
+                      let taxTotal = 0;
+                      newLineItems.forEach((item: any) => {
+                        subTotal += (item.total || 0);
+                        taxTotal += ((item.total || 0) * (item.tax || 0)) / 100;
+                      });
+
+                      const currentCharges = Array.isArray(quotationPreview.additionalCharges) ? quotationPreview.additionalCharges : [];
+                      const additionalTotal = currentCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+
+                      setQuotationPreview({
+                        ...quotationPreview,
+                        [newCycle === 'days' ? 'storageDays' : 'storageMonths']: newVal,
+                        lineItems: newLineItems,
+                        subTotal,
+                        taxTotal,
+                        grandTotal: subTotal + taxTotal + additionalTotal,
+                      });
+                    }}
+                    className="w-full px-4 py-3 bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 rounded-2xl font-bold text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
               </div>
 
               {/* Line Items Table */}
@@ -1613,7 +1724,7 @@ export default function QuotationPage() {
                         Total Wt
                       </th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-20">
-                        Months
+                        {quotationPreview.billingCycle === 'days' ? 'Days' : 'Months'}
                       </th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-28">
                         Rate (₹)
@@ -1749,6 +1860,184 @@ export default function QuotationPage() {
                 </table>
               </div>
 
+              {/* Additional Charges Section */}
+              <div className="col-span-full space-y-6 pt-6 border-t border-neutral-100 dark:border-neutral-800">
+                <div className="flex justify-between items-end">
+                  <div>
+                    <h4 className="text-sm font-black uppercase tracking-widest text-neutral-900 dark:text-neutral-100">Additional Charges</h4>
+                    <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-tight mt-0.5">Extra services, loading or handling fees</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const current = Array.isArray(quotationPreview.additionalCharges) ? quotationPreview.additionalCharges : [];
+                      const newCharges = [...current, { label: '', chargeType: 'quantity' as const, unit: 'Qty', value: 0, rate: 0, amount: 0 }];
+                      const sub = quotationPreview.subTotal || 0;
+                      const tax = quotationPreview.taxTotal || 0;
+                      const additionalTotal = newCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                      setQuotationPreview({
+                        ...quotationPreview,
+                        additionalCharges: newCharges,
+                        grandTotal: sub + tax + additionalTotal
+                      });
+                    }}
+                    className="text-[10px] font-black uppercase tracking-widest bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl transition-all shadow-lg shadow-indigo-500/20 flex items-center gap-2 active:scale-95"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add New Charge
+                  </button>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {Array.isArray(quotationPreview.additionalCharges) && quotationPreview.additionalCharges.map((charge: any, idx: number) => (
+                    <div key={idx} className="bg-neutral-50 dark:bg-neutral-950/50 p-5 rounded-3xl border border-neutral-100 dark:border-neutral-800 transition-all hover:border-indigo-500/30 hover:shadow-xl hover:shadow-indigo-500/5 relative group">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newCharges = quotationPreview.additionalCharges.filter((_: any, i: number) => i !== idx);
+                          const sub = quotationPreview.subTotal || 0;
+                          const tax = quotationPreview.taxTotal || 0;
+                          const additionalTotal = newCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                          setQuotationPreview({ ...quotationPreview, additionalCharges: newCharges, grandTotal: sub + tax + additionalTotal });
+                        }}
+                        className="absolute -top-2 -right-2 w-8 h-8 flex items-center justify-center bg-white dark:bg-neutral-900 text-rose-500 border border-neutral-100 dark:border-neutral-800 rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-all hover:bg-rose-50 dark:hover:bg-rose-950/30 active:scale-90"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-3">
+                           <div className="space-y-1.5">
+                              <label className="text-[10px] uppercase font-black text-neutral-400 tracking-wider">Label</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. Loading"
+                                value={charge.label}
+                                onChange={(e) => {
+                                  const newCharges = [...(quotationPreview.additionalCharges || [])];
+                                  newCharges[idx].label = e.target.value;
+                                  setQuotationPreview({ ...quotationPreview, additionalCharges: newCharges });
+                                }}
+                                className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                              />
+                           </div>
+                           <div className="space-y-1.5">
+                              <label className="text-[10px] uppercase font-black text-neutral-400 tracking-wider">Type</label>
+                              <select
+                                value={charge.chargeType || 'quantity'}
+                                onChange={(e) => {
+                                  const newCharges = [...(quotationPreview.additionalCharges || [])];
+                                  newCharges[idx].chargeType = e.target.value as 'fixed' | 'quantity' | 'weight';
+                                  if (e.target.value === 'fixed') {
+                                    newCharges[idx].value = 0;
+                                    newCharges[idx].rate = 0;
+                                  } else {
+                                    newCharges[idx].amount = (newCharges[idx].value || 0) * (newCharges[idx].rate || 0);
+                                  }
+                                  const sub = quotationPreview.subTotal || 0;
+                                  const tax = quotationPreview.taxTotal || 0;
+                                  const additionalTotal = newCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                                  setQuotationPreview({ ...quotationPreview, additionalCharges: newCharges, grandTotal: sub + tax + additionalTotal });
+                                }}
+                                className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                              >
+                                <option value="quantity">Qty Wise</option>
+                                <option value="weight">Wt Wise</option>
+                                <option value="fixed">Fixed</option>
+                              </select>
+                           </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 items-end">
+                           {charge.chargeType !== 'fixed' ? (
+                             <>
+                               <div className="space-y-1.5">
+                                  <label className="text-[10px] uppercase font-black text-neutral-400 tracking-wider">{charge.chargeType === 'quantity' ? 'Unit' : 'Kg'}</label>
+                                  <input
+                                    type="number"
+                                    value={charge.value || ''}
+                                    placeholder="0"
+                                    onChange={(e) => {
+                                      const newCharges = [...(quotationPreview.additionalCharges || [])];
+                                      newCharges[idx].value = Number(e.target.value);
+                                      newCharges[idx].amount = newCharges[idx].value * (newCharges[idx].rate || 0);
+                                      const additionalTotal = newCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                                      const sub = quotationPreview.subTotal || 0;
+                                      const tax = quotationPreview.taxTotal || 0;
+                                      setQuotationPreview({ ...quotationPreview, additionalCharges: newCharges, grandTotal: sub + tax + additionalTotal });
+                                    }}
+                                    className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                                  />
+                               </div>
+                               <div className="space-y-1.5">
+                                  <label className="text-[10px] uppercase font-black text-neutral-400 tracking-wider">Rate (₹)</label>
+                                  <input
+                                    type="number"
+                                    value={charge.rate || ''}
+                                    placeholder="0"
+                                    onChange={(e) => {
+                                      const newCharges = [...(quotationPreview.additionalCharges || [])];
+                                      newCharges[idx].rate = Number(e.target.value);
+                                      newCharges[idx].amount = newCharges[idx].rate * (newCharges[idx].value || 0);
+                                      const additionalTotal = newCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                                      const sub = quotationPreview.subTotal || 0;
+                                      const tax = quotationPreview.taxTotal || 0;
+                                      setQuotationPreview({ ...quotationPreview, additionalCharges: newCharges, grandTotal: sub + tax + additionalTotal });
+                                    }}
+                                    className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"
+                                  />
+                               </div>
+                             </>
+                           ) : (
+                             <div className="col-span-2 space-y-1.5">
+                                <label className="text-[10px] uppercase font-black text-neutral-400 tracking-wider">Amount (₹)</label>
+                                <input
+                                  type="number"
+                                  value={charge.amount || ''}
+                                  placeholder="0"
+                                  onChange={(e) => {
+                                    const newCharges = [...(quotationPreview.additionalCharges || [])];
+                                    newCharges[idx].amount = Number(e.target.value);
+                                    const additionalTotal = newCharges.reduce((acc: number, c) => acc + (c.amount || 0), 0);
+                                    const sub = quotationPreview.subTotal || 0;
+                                    const tax = quotationPreview.taxTotal || 0;
+                                    setQuotationPreview({ ...quotationPreview, additionalCharges: newCharges, grandTotal: sub + tax + additionalTotal });
+                                  }}
+                                  className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"
+                                />
+                             </div>
+                           )}
+                        </div>
+                        {charge.chargeType !== 'fixed' && (
+                           <div className="pt-2 border-t border-dashed border-neutral-200 dark:border-neutral-800 flex justify-between items-center">
+                             <span className="text-[10px] font-black uppercase tracking-tight text-neutral-400">Total</span>
+                             <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">₹{(charge.amount || 0).toLocaleString()}</span>
+                           </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {(!Array.isArray(quotationPreview.additionalCharges) || quotationPreview.additionalCharges.length === 0) && (
+                  <div className="group flex flex-col items-center justify-center py-10 border-2 border-dashed border-neutral-100 dark:border-neutral-800 rounded-4xl bg-white dark:bg-neutral-900/50 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 cursor-pointer transition-all active:scale-[0.99]"
+                       onClick={() => {
+                          const sub = quotationPreview.subTotal || 0;
+                          const tax = quotationPreview.taxTotal || 0;
+                          const newCharges = [{ label: '', chargeType: 'quantity' as const, unit: 'Qty', value: 0, rate: 0, amount: 0 }];
+                          const additionalTotal = newCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                          setQuotationPreview({
+                             ...quotationPreview,
+                             additionalCharges: newCharges,
+                             grandTotal: sub + tax + additionalTotal
+                          });
+                       }}>
+                    <div className="w-12 h-12 rounded-full bg-neutral-50 dark:bg-neutral-800 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                      <Plus className="w-6 h-6 text-neutral-400" />
+                    </div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-400">Add Additional Charges</p>
+                  </div>
+                )}
+              </div>
+
               {/* Summary & Totals */}
               <div className="flex flex-col md:flex-row justify-between gap-12 pt-4">
                 <div className="flex-1 space-y-4">
@@ -1790,6 +2079,19 @@ export default function QuotationPage() {
                     <span className="font-bold font-mono">
                       ₹
                       {quotationPreview.taxTotal?.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center opacity-60 font-mono text-emerald-400">
+                    <span className="text-[10px] font-black uppercase tracking-widest">
+                      Add. Charges
+                    </span>
+                    <span className="font-bold">
+                      ₹
+                      {(Array.isArray(quotationPreview.additionalCharges) 
+                        ? quotationPreview.additionalCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0)
+                        : (quotationPreview.additionalCharges || 0)).toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                       })}
                     </span>
@@ -1916,16 +2218,201 @@ export default function QuotationPage() {
                       onChange={(e) => {
                         const newGst = Number(e.target.value);
                         const subTotal = quotationFormData.subTotal || 0;
+                        const sumCharges = (charges: any) => {
+                          if (!charges) return 0;
+                          if (Array.isArray(charges)) return charges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                          return Number(charges) || 0;
+                        };
+                        const additional = sumCharges(quotationFormData.additionalCharges);
                         const taxTotal = (subTotal * newGst) / 100;
                         setQuotationFormData({
                           ...quotationFormData,
                           gst: newGst,
                           taxTotal,
-                          grandTotal: subTotal + taxTotal
+                          grandTotal: subTotal + taxTotal + additional
                         });
                       }}
                       className="w-full pl-10 pr-4 py-3 bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 rounded-2xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
                     />
+                  </div>
+                </div>
+
+                <div className="col-span-full space-y-6 pt-6 border-t border-neutral-100 dark:border-neutral-800">
+                  <div className="flex justify-between items-end">
+                    <div>
+                      <h4 className="text-sm font-black uppercase tracking-widest text-neutral-900 dark:text-neutral-100">Additional Charges</h4>
+                      <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-tight mt-0.5">Extra services, loading or handling fees</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const current = Array.isArray(quotationFormData.additionalCharges) ? quotationFormData.additionalCharges : [];
+                        const newCharges = [...current, { label: '', chargeType: 'quantity' as const, unit: 'Qty', value: 0, rate: 0, amount: 0 }];
+                        const additionalTotal = newCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                        const sub = quotationFormData.subTotal || 0;
+                        const tax = quotationFormData.taxTotal || 0;
+                        setQuotationFormData({
+                          ...quotationFormData,
+                          additionalCharges: newCharges,
+                          grandTotal: sub + tax + additionalTotal
+                        });
+                      }}
+                      className="text-[10px] font-black uppercase tracking-widest bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl transition-all shadow-lg shadow-indigo-500/20 flex items-center gap-2 active:scale-95"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add New Charge
+                    </button>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {Array.isArray(quotationFormData.additionalCharges) && quotationFormData.additionalCharges.map((charge, idx) => (
+                      <div key={idx} className="bg-neutral-50 dark:bg-neutral-950/50 p-5 rounded-3xl border border-neutral-100 dark:border-neutral-800 transition-all hover:border-indigo-500/30 hover:shadow-xl hover:shadow-indigo-500/5 relative group">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newCharges = (quotationFormData.additionalCharges as any[]).filter((_, i) => i !== idx);
+                            const additionalTotal = newCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                            const subTotal = quotationFormData.subTotal || 0;
+                            const taxTotal = quotationFormData.taxTotal || 0;
+                            setQuotationFormData({ ...quotationFormData, additionalCharges: newCharges, grandTotal: subTotal + taxTotal + additionalTotal });
+                          }}
+                          className="absolute -top-2 -right-2 w-8 h-8 flex items-center justify-center bg-white dark:bg-neutral-900 text-rose-500 border border-neutral-100 dark:border-neutral-800 rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-all hover:bg-rose-50 dark:hover:bg-rose-950/30 active:scale-90"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-3">
+                             <div className="space-y-1.5">
+                                <label className="text-[10px] uppercase font-black text-neutral-400 tracking-wider">Label</label>
+                                <input
+                                  type="text"
+                                  placeholder="Label"
+                                  value={charge.label}
+                                  onChange={(e) => {
+                                    const newCharges = [...(quotationFormData.additionalCharges || [])];
+                                    newCharges[idx].label = e.target.value;
+                                    setQuotationFormData({ ...quotationFormData, additionalCharges: newCharges });
+                                  }}
+                                  className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                             </div>
+                             <div className="space-y-1.5">
+                                <label className="text-[10px] uppercase font-black text-neutral-400 tracking-wider">Type</label>
+                                <select
+                                  value={charge.chargeType || 'quantity'}
+                                  onChange={(e) => {
+                                    const newCharges = [...(quotationFormData.additionalCharges || [])];
+                                    newCharges[idx].chargeType = e.target.value as 'fixed' | 'quantity' | 'weight';
+                                    if (e.target.value === 'fixed') { 
+                                      newCharges[idx].value = 0; 
+                                      newCharges[idx].rate = 0; 
+                                    } else {
+                                      newCharges[idx].amount = (newCharges[idx].value || 0) * (newCharges[idx].rate || 0);
+                                    }
+                                    const sub = quotationFormData.subTotal || 0;
+                                    const tax = quotationFormData.taxTotal || 0;
+                                    const additionalTotal = newCharges.reduce((acc: number, c) => acc + (c.amount || 0), 0);
+                                    setQuotationFormData({ ...quotationFormData, additionalCharges: newCharges, grandTotal: sub + tax + additionalTotal });
+                                  }}
+                                  className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                                >
+                                  <option value="quantity">Qty Wise</option>
+                                  <option value="weight">Wt Wise</option>
+                                  <option value="fixed">Fixed</option>
+                                </select>
+                             </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3 items-end">
+                             {charge.chargeType !== 'fixed' ? (
+                               <>
+                                 <div className="space-y-1.5">
+                                    <label className="text-[10px] uppercase font-black text-neutral-400 tracking-wider">{charge.chargeType === 'quantity' ? 'Unit' : 'Kg'}</label>
+                                    <input
+                                      type="number"
+                                      value={charge.value || ''}
+                                      placeholder="0"
+                                      onChange={(e) => {
+                                        const newCharges = [...(quotationFormData.additionalCharges || [])];
+                                        newCharges[idx].value = Number(e.target.value);
+                                        newCharges[idx].amount = newCharges[idx].value * (newCharges[idx].rate || 0);
+                                        const subTotal = quotationFormData.subTotal || 0;
+                                        const taxTotal = quotationFormData.taxTotal || 0;
+                                        const additionalTotal = newCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                                        setQuotationFormData({ ...quotationFormData, additionalCharges: newCharges, grandTotal: subTotal + taxTotal + additionalTotal });
+                                      }}
+                                      className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    />
+                                 </div>
+                                 <div className="space-y-1.5">
+                                    <label className="text-[10px] uppercase font-black text-neutral-400 tracking-wider">Rate</label>
+                                    <input
+                                      type="number"
+                                      value={charge.rate || ''}
+                                      placeholder="0"
+                                      onChange={(e) => {
+                                        const newCharges = [...(quotationFormData.additionalCharges || [])];
+                                        newCharges[idx].rate = Number(e.target.value);
+                                        newCharges[idx].amount = newCharges[idx].rate * (newCharges[idx].value || 0);
+                                        const subTotal = quotationFormData.subTotal || 0;
+                                        const taxTotal = quotationFormData.taxTotal || 0;
+                                        const additionalTotal = newCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                                        setQuotationFormData({ ...quotationFormData, additionalCharges: newCharges, grandTotal: subTotal + taxTotal + additionalTotal });
+                                      }}
+                                      className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"
+                                    />
+                                 </div>
+                               </>
+                             ) : (
+                               <div className="col-span-2 space-y-1.5">
+                                  <label className="text-[10px] uppercase font-black text-neutral-400 tracking-wider">Amount</label>
+                                  <input
+                                    type="number"
+                                    value={charge.amount || ''}
+                                    placeholder="0"
+                                    onChange={(e) => {
+                                      const newCharges = [...(quotationFormData.additionalCharges || [])];
+                                      newCharges[idx].amount = Number(e.target.value);
+                                      const subTotal = quotationFormData.subTotal || 0;
+                                      const taxTotal = quotationFormData.taxTotal || 0;
+                                      const additionalTotal = newCharges.reduce((acc: number, c) => acc + (c.amount || 0), 0);
+                                      setQuotationFormData({ ...quotationFormData, additionalCharges: newCharges, grandTotal: subTotal + taxTotal + additionalTotal });
+                                    }}
+                                    className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"
+                                  />
+                               </div>
+                             )}
+                          </div>
+                          {charge.chargeType !== 'fixed' && (
+                             <div className="pt-2 border-t border-dashed border-neutral-200 dark:border-neutral-800 flex justify-between items-center">
+                               <span className="text-[10px] font-black uppercase tracking-tight text-neutral-400">Total</span>
+                               <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">₹{(charge.amount || 0).toLocaleString()}</span>
+                             </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {(!Array.isArray(quotationFormData.additionalCharges) || quotationFormData.additionalCharges.length === 0) && (
+                      <div 
+                         onClick={() => {
+                            const sub = quotationFormData.subTotal || 0;
+                            const tax = quotationFormData.taxTotal || 0;
+                            const newCharges = [{ label: '', chargeType: 'quantity' as const, unit: 'Qty', value: 0, rate: 0, amount: 0 }];
+                            const additionalTotal = newCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                            setQuotationFormData({
+                               ...quotationFormData,
+                               additionalCharges: newCharges,
+                               grandTotal: sub + tax + additionalTotal
+                            });
+                         }}
+                         className="col-span-full group flex flex-col items-center justify-center py-10 border-2 border-dashed border-neutral-100 dark:border-neutral-800 rounded-4xl bg-white dark:bg-neutral-900/50 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 cursor-pointer transition-all active:scale-[0.99]"
+                      >
+                        <div className="w-12 h-12 rounded-full bg-neutral-100 dark:bg-neutral-900 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                          <Plus className="w-6 h-6 text-neutral-400" />
+                        </div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Add Extra Charges</p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -2211,7 +2698,7 @@ export default function QuotationPage() {
                           Price
                         </div>
                         <div className="px-1 flex items-center justify-center border-r border-slate-900">
-                          Mon.
+                          {quotationPreviewData.quotation.billingCycle === 'days' ? 'Days' : 'Mon.'}
                         </div>
                         <div className="px-2 flex items-center justify-center">
                           Amount
@@ -2250,9 +2737,9 @@ export default function QuotationPage() {
                               {Number(item.price || item.rate || 0).toFixed(2)}
                             </div>
                             <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                              {quotationPreviewData.quotation.storageMonths ||
-                                item.months ||
-                                1}
+                              {quotationPreviewData.quotation.billingCycle === 'days' 
+                                ? (quotationPreviewData.quotation.storageDays || 30) 
+                                : (quotationPreviewData.quotation.storageMonths || item.months || 1)}
                             </div>
                             <div className="px-2 py-1.5 text-[10px] font-bold flex items-center justify-end">
                               {Number(item.amount || item.total || 0).toFixed(
@@ -2290,7 +2777,7 @@ export default function QuotationPage() {
                       {/* Totals Row - ONLY ON LAST PAGE */}
                       {pageIdx === chunks.length - 1 ? (
                         <>
-                          <div className="flex border-b border-black h-36">
+                          <div className="flex border-b border-black min-h-36 flex-wrap">
                             <div className="w-1/2 p-4 font-semibold text-xs border-r border-black flex flex-col gap-1.5 font-mono leading-tight bg-slate-50/30 text-left">
                               <div className="flex">
                                 <span className="w-24 inline-block font-bold text-slate-500">
@@ -2298,7 +2785,7 @@ export default function QuotationPage() {
                                 </span>{" "}
                                 <span className="text-black uppercase">
                                   {quotationPreviewData.quotation.remarks ||
-                                    "COLD RENT"}
+                                    "QUOTATION"}
                                 </span>
                               </div>
                               <div className="flex">
@@ -2335,7 +2822,7 @@ export default function QuotationPage() {
                                 </span>
                               </div>
                             </div>
-                            <div className="w-1/2 flex flex-col font-bold text-xs p-4 font-mono justify-between bg-white text-right">
+                            <div className="w-1/2 flex flex-col font-bold text-xs p-4 font-mono bg-white text-right">
                               <div className="space-y-2">
                                 <div className="flex justify-between items-center">
                                   <span className="text-slate-500 font-bold uppercase tracking-tighter">
@@ -2348,12 +2835,23 @@ export default function QuotationPage() {
                                     ).toFixed(2)}
                                   </span>
                                 </div>
+                                <div className="flex justify-between items-center text-emerald-600">
+                                  <span className="font-bold uppercase tracking-tighter">
+                                    Add. Charges:
+                                  </span>{" "}
+                                  <span className="text-black">
+                                    ₹
+                                    {Number(
+                                      quotationPreviewData.quotation.additionalCharges || 0,
+                                    ).toFixed(2)}
+                                  </span>
+                                </div>
                                 {(quotationPreviewData.quotation.taxTotal || 0) >
                                   0 && (
                                     <>
                                       <div className="flex justify-between items-center">
                                         <span className="text-slate-500 font-bold uppercase tracking-tighter">
-                                          SGST Total:
+                                          SGST @ {Number((quotationPreviewData.quotation.gst || 18) / 2).toFixed(1)}%:
                                         </span>{" "}
                                         <span className="text-black">
                                           ₹
@@ -2365,7 +2863,7 @@ export default function QuotationPage() {
                                       </div>
                                       <div className="flex justify-between items-center">
                                         <span className="text-slate-500 font-bold uppercase tracking-tighter">
-                                          CGST Total:
+                                          CGST @ {Number((quotationPreviewData.quotation.gst || 18) / 2).toFixed(1)}%:
                                         </span>{" "}
                                         <span className="text-black">
                                           ₹
@@ -2377,6 +2875,39 @@ export default function QuotationPage() {
                                       </div>
                                     </>
                                   )}
+                                {(() => {
+                                   const charges = quotationPreviewData.quotation.additionalCharges;
+                                   if (!charges) return null;
+                                   let total = 0;
+                                   if (Array.isArray(charges)) {
+                                     total = charges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                                     if (total <= 0) return null;
+                                     return (
+                                       <div className="space-y-1">
+                                         <div className="text-[10px] text-slate-400 font-bold uppercase border-b border-slate-100 pb-1 mb-1">Detailed Charges:</div>
+                                         {charges.map((c: any, i: number) => (
+                                           <div key={i} className="flex justify-between items-center text-[10px]">
+                                             <span className="text-slate-500 italic">{c.label || 'Extra Charge'}:</span>
+                                             <span className="text-black font-semibold">₹{Number(c.amount || 0).toFixed(2)}</span>
+                                           </div>
+                                         ))}
+                                         <div className="flex justify-between items-center border-t border-slate-100 mt-1 pt-1 font-black text-emerald-600">
+                                           <span className="uppercase tracking-tighter">Total Add. Charges:</span>
+                                           <span className="text-black">₹{total.toFixed(2)}</span>
+                                         </div>
+                                       </div>
+                                     );
+                                   } else if (Number(charges) > 0) {
+                                     total = Number(charges);
+                                     return (
+                                       <div className="flex justify-between items-center text-emerald-600">
+                                         <span className="font-bold uppercase tracking-tighter">Add. Charges:</span>
+                                         <span className="text-black">₹{total.toFixed(2)}</span>
+                                       </div>
+                                     );
+                                   }
+                                   return null;
+                                })()}
                               </div>
                               <div className="flex justify-between items-center border-t border-black pt-2 mt-2 text-lg font-black bg-slate-900 text-white p-2 rounded-lg">
                                 <span className="uppercase tracking-tighter text-xs text-indigo-300">
@@ -2404,39 +2935,25 @@ export default function QuotationPage() {
                             </span>
                           </div>
 
-                          {/* Signature Row */}
-                          <div className="flex h-32">
-                            <div className="w-2/3 p-3 text-[9px] leading-relaxed border-r border-black flex flex-col justify-start text-slate-700 bg-white text-left">
-                              <p className="font-black mb-1 text-black uppercase tracking-widest border-b border-black/10 inline-block">
-                                Terms & Conditions:
-                              </p>
-                              {companySettings?.termsAndConditions &&
-                                companySettings.termsAndConditions.length > 0 ? (
-                                companySettings.termsAndConditions.map(
-                                  (term, idx) => (
-                                    <p key={idx}>
-                                      {idx + 1}. {term}
-                                    </p>
-                                  ),
-                                )
-                              ) : (
-                                <>
-                                  <p>1. Stored at owner's risk.</p>
-                                  <p>2. Interest @24% p.a. if not paid within 7 days.</p>
-                                </>
-                              )}
+                          {/* Signature Section */}
+                          <div className="flex border-b border-black">
+                            <div className="w-1/2 p-3 text-[10px] border-r border-black flex flex-col justify-end bg-slate-50/20 italic text-slate-500">
+                              Note: This is a computer generated document and does not require a physical signature.
                             </div>
-                            <div className="w-1/3 flex flex-col justify-end items-center p-4 text-[11px] bg-slate-50/50 relative">
-                              {(companySettings as any)?.signatureUrl && (
-                                <div className="absolute top-2 bottom-14 left-4 right-4 flex items-center justify-center pointer-events-none">
+                            <div className="w-1/2 flex flex-col justify-end items-center p-6 text-[11px] bg-slate-50/50 relative min-h-32">
+                              {/* Signature Image Container */}
+                              <div className="absolute top-2 bottom-12 left-4 right-4 flex items-center justify-center pointer-events-none">
+                                {companySettings?.signatureUrl && (
                                   <img
-                                    src={(companySettings as any).signatureUrl}
+                                    src={companySettings.signatureUrl}
                                     className="max-h-full max-w-full object-contain mix-blend-multiply"
                                     crossOrigin="anonymous"
                                   />
-                                </div>
-                              )}
-                              <div className="w-full border-t-2 border-slate-900 text-center font-black pt-2 uppercase tracking-tighter relative z-10">
+                                )}
+                              </div>
+
+                              {/* Signature Text Section */}
+                              <div className="w-full border-t-2 border-slate-900 text-center font-black pt-2 uppercase tracking-tighter relative z-10 bg-slate-50/80">
                                 {companySettings?.signatureLabel ||
                                   "Authorized Signatory"}
                                 <div className="text-[9px] font-bold text-slate-500 mt-1 capitalize">
@@ -2465,6 +2982,63 @@ export default function QuotationPage() {
                   </div>
                 ));
               })()}
+
+              {/* Page 2: Terms & Conditions */}
+              {/* <div 
+                className="w-[210mm] min-h-[297mm] bg-white text-black p-[20mm] shadow-md border border-slate-200 print:shadow-none print:border-none print:w-full font-sans text-sm mx-auto mt-8 print:mt-0 print:break-before-page"
+              >
+                <div className="border border-black h-full flex flex-col p-10 bg-slate-50/10 relative">
+                  <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-8">
+                    <h2 className="text-2xl font-black uppercase tracking-widest text-slate-900">Terms & Conditions</h2>
+                    <div className="text-right">
+                       <p className="text-xs font-bold text-slate-500 uppercase">Document Reference</p>
+                       <p className="text-sm font-black italic">#{quotationPreviewData.quotation.quotationNumber}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6 text-sm leading-relaxed text-slate-800 flex-1">
+                    {companySettings?.termsAndConditions && companySettings.termsAndConditions.length > 0 ? (
+                      companySettings.termsAndConditions.map((term, idx) => (
+                        <div key={idx} className="flex gap-4 items-start bg-white p-4 rounded-lg border border-slate-100 shadow-sm">
+                          <span className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs">{idx + 1}</span>
+                          <p className="flex-1 font-medium">{term}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="space-y-4">
+                        {[
+                          "This quotation is valid for a period of 30 days from the date of issuance.",
+                          "Rates quoted are based on current market conditions and are subject to revision if not accepted within the validity period.",
+                          "GST and other government taxes will be applicable extra as per the prevailing rates.",
+                          "Payment terms: 100% advance or as per mutually agreed contract terms.",
+                          "The warehouse reserves the right to revise storage rates with 15 days' notice.",
+                          "Disputes, if any, shall be subject to Surat Jurisdiction exclusively."
+                        ].map((text, idx) => (
+                          <div key={idx} className="flex gap-4 items-start bg-white p-4 rounded-lg border border-slate-100 shadow-sm">
+                            <span className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs">{idx + 1}</span>
+                            <p className="flex-1 font-medium">{text}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-20 flex justify-between items-end border-t border-slate-200 pt-8">
+                     <div className="text-[10px] font-bold text-slate-400 italic">
+                       Continued from Page 1 — Ref No: {quotationPreviewData.quotation.quotationNumber}
+                     </div>
+                     <div className="text-center w-48">
+                       <div className="border-t border-black pt-2 text-[10px] font-black uppercase">
+                          Authorized Acceptance
+                       </div>
+                     </div>
+                  </div>
+
+                  <div className="absolute bottom-6 w-full text-center left-0 text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+                    PAGE 2 of 2
+                  </div>
+                </div>
+              </div> */}
             </div>
             <style jsx global>{`
               @media print {
@@ -2521,6 +3095,5 @@ export default function QuotationPage() {
         </div>
       )}
     </div>
-    // </div>
   );
 }

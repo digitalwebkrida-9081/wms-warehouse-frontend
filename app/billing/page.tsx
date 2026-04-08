@@ -24,7 +24,7 @@ import {
   Printer,
   FileDown,
 } from "lucide-react";
-import { Bill } from "@/app/lib/db";
+import { Bill, Inward } from "@/app/lib/db";
 import { authFetch } from "@/app/lib/auth-fetch";
 import { useToast } from "@/app/_components/ToastProvider";
 import { useConfirm } from "@/app/_components/ConfirmProvider";
@@ -55,18 +55,7 @@ interface CompanySettings {
   footerText: string;
 }
 
-interface Inward {
-  id: string;
-  inwardDate: string;
-  date?: string; // Fallback
-  partyId: string;
-  productId: string;
-  totalWeight: number;
-  remainingWeight: number;
-  goodsCondition: string;
-  remarks: string;
-  inwardNumber?: string;
-}
+// interface Inward removed, using imported one
 export default function BillingPage() {
   const { showToast } = useToast();
   const confirm = useConfirm();
@@ -246,6 +235,10 @@ export default function BillingPage() {
       setEditingInward(null);
       setFormData({
         inwardDate: new Date().toISOString().split("T")[0],
+        quantity: 0,
+        unitWeight: 0,
+        totalWeight: 0,
+        remainingWeight: 0,
       });
     }
     setIsModalOpen(true);
@@ -351,6 +344,9 @@ export default function BillingPage() {
           billPeriod: `${billPreview.month} ${billPreview.year}`,
           gstRate: billPreview.gst,
           outwardDate: billPreview.outwardDate,
+          storageMonths: billPreview.storageMonths,
+          storageDays: billPreview.storageDays,
+          billingCycle: billPreview.billingCycle
         }),
       });
       if (!res.ok) {
@@ -401,7 +397,12 @@ export default function BillingPage() {
       const res = await authFetch("/api/billing", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(billPreview),
+        body: JSON.stringify({
+          ...billPreview,
+          storageMonths: billPreview.storageMonths,
+          storageDays: billPreview.storageDays,
+          billingCycle: billPreview.billingCycle
+        }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -577,9 +578,18 @@ export default function BillingPage() {
     return result + " Only";
   };
 
-  const handleEditBill = (bill: Bill) => {
+  const handleEditBill = (bill: any) => {
+    const normalizedCharges = Array.isArray(bill.additionalCharges)
+      ? bill.additionalCharges
+      : (Number(bill.additionalCharges) > 0
+        ? [{ label: 'Manual Charges', chargeType: 'fixed', unit: '', value: 0, rate: 0, amount: Number(bill.additionalCharges) }]
+        : []);
+
     setEditingBill(bill);
-    setBillFormData(bill);
+    setBillFormData({
+      ...bill,
+      additionalCharges: normalizedCharges
+    });
     setIsEditBillModalOpen(true);
   };
 
@@ -590,7 +600,12 @@ export default function BillingPage() {
       const res = await authFetch(`/api/billing/${editingBill.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(billFormData),
+        body: JSON.stringify({
+          ...billFormData,
+          storageMonths: billFormData.storageMonths,
+          storageDays: billFormData.storageDays,
+          billingCycle: billFormData.billingCycle
+        }),
       });
       if (res.ok) {
         setIsEditBillModalOpen(false);
@@ -678,6 +693,7 @@ export default function BillingPage() {
       field === "quantity" ||
       field === "unitWeight" ||
       field === "weight" ||
+      field === "months" ||
       field === "rate" ||
       field === "tax"
     ) {
@@ -694,12 +710,11 @@ export default function BillingPage() {
       if (field === "quantity" || field === "unitWeight") {
         weight = Number((qty * unitWt).toFixed(2));
         newLineItems[index].weight = weight;
-      } else if (field === "weight") {
-        weight = Number(value);
       }
 
       const rate = field === "rate" ? Number(value) : newLineItems[index].rate || 0;
-      const amt = qty * rate;
+      const months = field === "months" ? Number(value) : newLineItems[index].months || 1;
+      const amt = Number((weight * rate * months).toFixed(2));
       newLineItems[index].total = amt;
       newLineItems[index].amount = amt;
     }
@@ -708,19 +723,24 @@ export default function BillingPage() {
     let subTotal = 0;
     let taxTotal = 0;
     newLineItems.forEach((item: any) => {
-      const qty = item.quantity || 0;
+      const weight = item.weight || 0;
       const rate = item.rate || 0;
-      const amt = qty * rate;
+      const months = item.months || 1;
+      const amt = Number((weight * rate * months).toFixed(2));
       subTotal += amt;
       taxTotal += (amt * (item.tax || 0)) / 100;
     });
+
+    // Sum additional charges
+    const currentCharges = Array.isArray(billPreview.additionalCharges) ? billPreview.additionalCharges : [];
+    const additionalTotal = currentCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
 
     setBillPreview({
       ...billPreview,
       lineItems: newLineItems,
       subTotal,
       taxTotal,
-      grandTotal: subTotal + taxTotal,
+      grandTotal: subTotal + taxTotal + additionalTotal,
     });
   };
 
@@ -880,6 +900,18 @@ export default function BillingPage() {
                       scope="col"
                       className="px-6 py-4 text-left text-[10px] font-black text-neutral-500 dark:text-neutral-400 uppercase tracking-widest"
                     >
+                      Qty
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-6 py-4 text-left text-[10px] font-black text-neutral-500 dark:text-neutral-400 uppercase tracking-widest"
+                    >
+                      Unit Wt
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-6 py-4 text-left text-[10px] font-black text-neutral-500 dark:text-neutral-400 uppercase tracking-widest"
+                    >
                       Total Weight
                     </th>
                     <th
@@ -951,6 +983,12 @@ export default function BillingPage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-neutral-900 dark:text-neutral-100">
                           {formatDate(inward.inwardDate)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-700 dark:text-neutral-300">
+                          {inward.quantity || 0}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-700 dark:text-neutral-300">
+                          {inward.unitWeight || 0} <span className="text-[10px] opacity-50 uppercase ml-0.5">kg</span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-neutral-700 dark:text-neutral-300">
                           {inward.totalWeight.toLocaleString()}{" "}
@@ -1344,23 +1382,68 @@ export default function BillingPage() {
 
                 <div className="space-y-2">
                   <label className="block font-medium text-neutral-700 dark:text-neutral-300">
-                    Total Weight (kg) <span className="text-red-500">*</span>
+                    Quantity (Units/Bags) <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="number"
                     required
                     min={0}
-                    value={formData.totalWeight || ""}
-                    onChange={(e) =>
+                    value={formData.quantity ?? ""}
+                    onChange={(e) => {
+                      const rawVal = e.target.value;
+                      const qty = rawVal === "" ? "" : Number(rawVal);
+                      const unitWt = Number(formData.unitWeight) || 0;
+                      const totalWt = (Number(qty) || 0) * unitWt;
                       setFormData({
                         ...formData,
-                        totalWeight: Number(e.target.value),
+                        quantity: qty as any,
+                        totalWeight: totalWt,
                         remainingWeight: editingInward
                           ? formData.remainingWeight
-                          : Number(e.target.value),
+                          : totalWt,
                       })
-                    }
+                    }}
                     className="w-full px-3 py-2 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block font-medium text-neutral-700 dark:text-neutral-300">
+                    Unit Weight (kg) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={0}
+                    step="0.01"
+                    value={formData.unitWeight ?? ""}
+                    onChange={(e) => {
+                      const rawVal = e.target.value;
+                      const unitWt = rawVal === "" ? "" : Number(rawVal);
+                      const qty = Number(formData.quantity) || 0;
+                      const totalWt = qty * (Number(unitWt) || 0);
+                      setFormData({
+                        ...formData,
+                        unitWeight: unitWt as any,
+                        totalWeight: totalWt,
+                        remainingWeight: editingInward
+                          ? formData.remainingWeight
+                          : totalWt,
+                      })
+                    }}
+                    className="w-full px-3 py-2 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block font-medium text-neutral-700 dark:text-neutral-300 text-neutral-400">
+                    Total Weight (kg) (Auto-calculated)
+                  </label>
+                  <input
+                    type="number"
+                    readOnly
+                    value={formData.totalWeight ?? ""}
+                    className="w-full px-3 py-2 bg-neutral-100 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg cursor-not-allowed font-bold text-neutral-500"
                   />
                 </div>
 
@@ -1371,15 +1454,11 @@ export default function BillingPage() {
                   <input
                     type="number"
                     min={0}
-                    value={
-                      formData.remainingWeight !== undefined
-                        ? formData.remainingWeight
-                        : ""
-                    }
+                    value={formData.remainingWeight ?? ""}
                     onChange={(e) =>
                       setFormData({
                         ...formData,
-                        remainingWeight: Number(e.target.value),
+                        remainingWeight: e.target.value === "" ? "" : Number(e.target.value) as any,
                       })
                     }
                     className="w-full px-3 py-2 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
@@ -1527,20 +1606,264 @@ export default function BillingPage() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
-                    Storage Months
+                    Billing Cycle
+                  </label>
+                  <select
+                    value={billPreview.billingCycle || 'months'}
+                    onChange={(e) => {
+                      const newCycle = e.target.value as 'months' | 'days';
+                      const val = newCycle === 'days' ? (billPreview.storageDays || 30) : (billPreview.storageMonths || 1);
+                      const effMonths = newCycle === 'days' ? (val / 30) : val;
+
+                      const newLineItems = billPreview.lineItems.map((item: any) => {
+                        const amt = Number(((item.weight || 0) * (item.rate || 0) * effMonths).toFixed(2));
+                        return { ...item, months: effMonths, total: amt, amount: amt };
+                      });
+
+                      let subTotal = 0;
+                      let taxTotal = 0;
+                      newLineItems.forEach((item: any) => {
+                        subTotal += (item.total || 0);
+                        taxTotal += ((item.total || 0) * (item.tax || 0)) / 100;
+                      });
+
+                      const currentCharges = Array.isArray(billPreview.additionalCharges) ? billPreview.additionalCharges : [];
+                      const additionalTotal = currentCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+
+                      setBillPreview({
+                        ...billPreview,
+                        billingCycle: newCycle,
+                        lineItems: newLineItems,
+                        subTotal,
+                        taxTotal,
+                        grandTotal: subTotal + taxTotal + additionalTotal,
+                      });
+                    }}
+                    className="w-full px-4 py-3 bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 rounded-2xl font-bold text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  >
+                    <option value="months">Months-wise</option>
+                    <option value="days">Days-wise</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                    {billPreview.billingCycle === 'days' ? 'Storage Days' : 'Storage Months'}
                   </label>
                   <input
                     type="number"
                     min={1}
-                    value={billPreview.storageMonths || 1}
-                    onChange={(e) =>
+                    value={(billPreview.billingCycle === 'days' ? billPreview.storageDays : billPreview.storageMonths) ?? ""}
+                    onChange={(e) => {
+                      const rawVal = e.target.value;
+                      const newVal = rawVal === "" ? "" : Number(rawVal);
+                      const calcVal = Number(newVal) || 0;
+                      const newCycle = billPreview.billingCycle || 'months';
+                      const effMonths = newCycle === 'days' ? (calcVal / 30) : calcVal;
+
+                      const newLineItems = billPreview.lineItems.map((item: any) => {
+                        const amt = Number(((item.weight || 0) * (item.rate || 0) * effMonths).toFixed(2));
+                        return { ...item, months: effMonths, total: amt, amount: amt };
+                      });
+
+                      let subTotal = 0;
+                      let taxTotal = 0;
+                      newLineItems.forEach((item: any) => {
+                        subTotal += (item.total || 0);
+                        taxTotal += ((item.total || 0) * (item.tax || 0)) / 100;
+                      });
+
+                      const currentCharges = Array.isArray(billPreview.additionalCharges) ? billPreview.additionalCharges : [];
+                      const additionalTotal = currentCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+
                       setBillPreview({
                         ...billPreview,
-                        storageMonths: Number(e.target.value),
-                      })
-                    }
+                        [newCycle === 'days' ? 'storageDays' : 'storageMonths']: newVal as any,
+                        lineItems: newLineItems,
+                        subTotal,
+                        taxTotal,
+                        grandTotal: subTotal + taxTotal + additionalTotal,
+                      });
+                    }}
                     className="w-full px-4 py-3 bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 rounded-2xl font-bold text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-indigo-500 outline-none"
                   />
+                </div>
+                {/* Additional Charges Section */}
+                <div className="col-span-full space-y-6 pt-6 border-t border-neutral-100 dark:border-neutral-800">
+                  <div className="flex justify-between items-end">
+                    <div>
+                      <h4 className="text-sm font-black uppercase tracking-widest text-neutral-900 dark:text-neutral-100">Additional Charges</h4>
+                      <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-tight mt-0.5">Extra services, loading or handling fees</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const current = Array.isArray(billPreview.additionalCharges) ? billPreview.additionalCharges : [];
+                        setBillPreview({
+                          ...billPreview,
+                          additionalCharges: [...current, { label: '', chargeType: 'quantity' as const, unit: 'Qty', value: 0, rate: 0, amount: 0 }]
+                        });
+                      }}
+                      className="text-[10px] font-black uppercase tracking-widest bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl transition-all shadow-lg shadow-indigo-500/20 flex items-center gap-2 active:scale-95"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add New Charge
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {Array.isArray(billPreview.additionalCharges) && billPreview.additionalCharges.map((charge: any, idx: number) => (
+                      <div key={idx} className="bg-neutral-50 dark:bg-neutral-950/50 p-5 rounded-3xl border border-neutral-100 dark:border-neutral-800 transition-all hover:border-indigo-500/30 hover:shadow-xl hover:shadow-indigo-500/5 relative group">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newCharges = billPreview.additionalCharges.filter((_: any, i: number) => i !== idx);
+                            const sub = billPreview.subTotal || 0;
+                            const tax = billPreview.taxTotal || 0;
+                            const additionalTotal = newCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                            setBillPreview({ ...billPreview, additionalCharges: newCharges, grandTotal: sub + tax + additionalTotal });
+                          }}
+                          className="absolute -top-2 -right-2 w-8 h-8 flex items-center justify-center bg-white dark:bg-neutral-900 text-rose-500 border border-neutral-100 dark:border-neutral-800 rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-all hover:bg-rose-50 dark:hover:bg-rose-950/30 active:scale-90"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] uppercase font-black text-neutral-400 tracking-wider">Label</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. Loading"
+                                value={charge.label}
+                                onChange={(e) => {
+                                  const newCharges = [...(billPreview.additionalCharges || [])];
+                                  newCharges[idx].label = e.target.value;
+                                  setBillPreview({ ...billPreview, additionalCharges: newCharges });
+                                }}
+                                className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] uppercase font-black text-neutral-400 tracking-wider">Charge Type</label>
+                              <select
+                                value={charge.chargeType || 'quantity'}
+                                onChange={(e) => {
+                                  const newCharges = [...(billPreview.additionalCharges || [])];
+                                  newCharges[idx].chargeType = e.target.value as 'fixed' | 'quantity' | 'weight';
+                                  if (e.target.value === 'fixed') {
+                                    newCharges[idx].value = 0;
+                                    newCharges[idx].rate = 0;
+                                  } else {
+                                    newCharges[idx].amount = (newCharges[idx].value || 0) * (newCharges[idx].rate || 0);
+                                  }
+                                  const sub = billPreview.subTotal || 0;
+                                  const tax = billPreview.taxTotal || 0;
+                                  const additionalTotal = newCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                                  setBillPreview({ ...billPreview, additionalCharges: newCharges, grandTotal: sub + tax + additionalTotal });
+                                }}
+                                className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                              >
+                                <option value="quantity">Quantity Wise</option>
+                                <option value="weight">Weight Wise</option>
+                                <option value="fixed">Fixed Amount</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3 items-end">
+                            {charge.chargeType !== 'fixed' ? (
+                              <>
+                                <div className="space-y-1.5">
+                                  <label className="text-[10px] uppercase font-black text-neutral-400 tracking-wider">{charge.chargeType === 'quantity' ? 'Quantity' : 'Weight (Kg)'}</label>
+                                  <input
+                                    type="number"
+                                    value={charge.value ?? ''}
+                                    onChange={(e) => {
+                                      const newVal = e.target.value === "" ? "" : Number(e.target.value);
+                                      const numVal = Number(newVal) || 0;
+                                      const newCharges = [...(billPreview.additionalCharges || [])];
+                                      newCharges[idx].value = newVal as any;
+                                      newCharges[idx].amount = numVal * ((newCharges[idx].rate as any) || 0);
+                                      const sub = billPreview.subTotal || 0;
+                                      const tax = billPreview.taxTotal || 0;
+                                      const additionalTotal = newCharges.reduce((acc: number, c) => acc + (c.amount || 0), 0);
+                                      setBillPreview({ ...billPreview, additionalCharges: newCharges, grandTotal: sub + tax + additionalTotal });
+                                    }}
+                                    className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                                  />
+                                </div>
+                                <div className="space-y-1.5">
+                                  <label className="text-[10px] uppercase font-black text-neutral-400 tracking-wider">Rate (₹)</label>
+                                  <input
+                                    type="number"
+                                    value={charge.rate ?? ''}
+                                    onChange={(e) => {
+                                      const newVal = e.target.value === "" ? "" : Number(e.target.value);
+                                      const numVal = Number(newVal) || 0;
+                                      const newCharges = [...(billPreview.additionalCharges || [])];
+                                      newCharges[idx].rate = newVal as any;
+                                      newCharges[idx].amount = numVal * ((newCharges[idx].value as any) || 0);
+                                      const sub = billPreview.subTotal || 0;
+                                      const tax = billPreview.taxTotal || 0;
+                                      const additionalTotal = newCharges.reduce((acc: number, c) => acc + (c.amount || 0), 0);
+                                      setBillPreview({ ...billPreview, additionalCharges: newCharges, grandTotal: sub + tax + additionalTotal });
+                                    }}
+                                    className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"
+                                  />
+                                </div>
+                              </>
+                            ) : (
+                              <div className="col-span-2 space-y-1.5">
+                                <label className="text-[10px] uppercase font-black text-neutral-400 tracking-wider">Amount (₹)</label>
+                                <input
+                                  type="number"
+                                  value={charge.amount ?? ''}
+                                  onChange={(e) => {
+                                    const newVal = e.target.value === "" ? "" : Number(e.target.value);
+                                    const newCharges = [...billPreview.additionalCharges];
+                                    newCharges[idx].amount = newVal as any;
+                                    const sub = billPreview.subTotal || 0;
+                                    const tax = billPreview.taxTotal || 0;
+                                    const additionalTotal = newCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                                    setBillPreview({ ...billPreview, additionalCharges: newCharges, grandTotal: sub + tax + additionalTotal });
+                                  }}
+                                  className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"
+                                />
+                              </div>
+                            )}
+                          </div>
+                          {charge.chargeType !== 'fixed' && (
+                            <div className="pt-2 border-t border-dashed border-neutral-200 dark:border-neutral-800 flex justify-between items-center">
+                              <span className="text-[10px] font-black uppercase tracking-tight text-neutral-400">Calculated Total</span>
+                              <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">₹{(charge.amount || 0).toLocaleString()}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {(!Array.isArray(billPreview.additionalCharges) || billPreview.additionalCharges.length === 0) && (
+                    <div
+                      onClick={() => {
+                        const sub = billPreview.subTotal || 0;
+                        const tax = billPreview.taxTotal || 0;
+                        const newCharges = [{ label: '', chargeType: 'quantity' as const, unit: 'Qty', value: 0, rate: 0, amount: 0 }];
+                        const additionalTotal = newCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                        setBillPreview({
+                          ...billPreview,
+                          additionalCharges: newCharges,
+                          grandTotal: sub + tax + additionalTotal
+                        });
+                      }}
+                      className="group flex flex-col items-center justify-center py-10 border-2 border-dashed border-neutral-100 dark:border-neutral-800 rounded-4xl bg-white dark:bg-neutral-900/50 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 cursor-pointer transition-all active:scale-[0.99]"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-neutral-50 dark:bg-neutral-800 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                        <Plus className="w-6 h-6 text-neutral-400" />
+                      </div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-400">Add Additional Charges</p>
+                      <p className="text-[9px] font-bold text-neutral-300 uppercase mt-1">Optional. E.g. Loading, Unloading, Handling</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1562,7 +1885,7 @@ export default function BillingPage() {
                         Total Wt
                       </th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-20">
-                        Months
+                        {billPreview.billingCycle === 'days' ? 'Days' : 'Months'}
                       </th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-neutral-400 w-28">
                         Rate (₹)
@@ -1594,9 +1917,9 @@ export default function BillingPage() {
                         <td className="px-6 py-4">
                           <input
                             type="number"
-                            value={item.quantity || 0}
+                            value={item.quantity ?? ""}
                             onChange={(e) =>
-                              updateLineItem(idx, "quantity", e.target.value)
+                              updateLineItem(idx, "quantity", e.target.value === "" ? "" : e.target.value)
                             }
                             className="w-full bg-neutral-100 dark:bg-neutral-800/50 border-0 rounded-lg px-2 py-1.5 font-bold focus:ring-1 focus:ring-indigo-500 outline-none"
                           />
@@ -1604,9 +1927,9 @@ export default function BillingPage() {
                         <td className="px-6 py-4">
                           <input
                             type="number"
-                            value={item.unitWeight || 0}
+                            value={item.unitWeight ?? ""}
                             onChange={(e) =>
-                              updateLineItem(idx, "unitWeight", e.target.value)
+                              updateLineItem(idx, "unitWeight", e.target.value === "" ? "" : e.target.value)
                             }
                             className="w-full bg-neutral-100 dark:bg-neutral-800/50 border-0 rounded-lg px-2 py-1.5 font-bold focus:ring-1 focus:ring-indigo-500 outline-none"
                           />
@@ -1622,9 +1945,9 @@ export default function BillingPage() {
                         <td className="px-6 py-4">
                           <input
                             type="number"
-                            value={item.months || 1}
+                            value={item.months ?? ""}
                             onChange={(e) =>
-                              updateLineItem(idx, "months", e.target.value)
+                              updateLineItem(idx, "months", e.target.value === "" ? "" : e.target.value)
                             }
                             className="w-full bg-neutral-100 dark:bg-neutral-800/50 border-0 rounded-lg px-2 py-1.5 font-bold focus:ring-1 focus:ring-indigo-500 outline-none"
                           />
@@ -1632,9 +1955,9 @@ export default function BillingPage() {
                         <td className="px-6 py-4">
                           <input
                             type="number"
-                            value={item.rate}
+                            value={item.rate ?? ""}
                             onChange={(e) =>
-                              updateLineItem(idx, "rate", e.target.value)
+                              updateLineItem(idx, "rate", e.target.value === "" ? "" : e.target.value)
                             }
                             className="w-full bg-neutral-100 dark:bg-neutral-800/50 border-0 rounded-lg px-2 py-1.5 font-bold focus:ring-1 focus:ring-indigo-500 outline-none"
                           />
@@ -1642,9 +1965,9 @@ export default function BillingPage() {
                         <td className="px-6 py-4">
                           <input
                             type="number"
-                            value={item.tax}
+                            value={item.tax ?? ""}
                             onChange={(e) =>
-                              updateLineItem(idx, "tax", e.target.value)
+                              updateLineItem(idx, "tax", e.target.value === "" ? "" : e.target.value)
                             }
                             className="w-full bg-neutral-100 dark:bg-neutral-800/50 border-0 rounded-lg px-2 py-1.5 font-bold focus:ring-1 focus:ring-indigo-500 outline-none"
                           />
@@ -1701,6 +2024,20 @@ export default function BillingPage() {
                     <span className="font-bold font-mono">
                       ₹
                       {billPreview.taxTotal?.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center opacity-60 font-mono text-emerald-400">
+                    <span className="text-[10px] font-black uppercase tracking-widest">
+                      Add. Charges
+                    </span>
+                    <span className="font-bold">
+                      ₹
+                      {(Array.isArray(billPreview.additionalCharges)
+                        ? billPreview.additionalCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0)
+                        : (billPreview.additionalCharges || 0)
+                      ).toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                       })}
                     </span>
@@ -1801,11 +2138,11 @@ export default function BillingPage() {
                     <input
                       type="number"
                       min={1}
-                      value={billFormData.storageMonths || 1}
+                      value={billFormData.storageMonths ?? ""}
                       onChange={(e) =>
                         setBillFormData({
                           ...billFormData,
-                          storageMonths: Number(e.target.value),
+                          storageMonths: e.target.value === "" ? "" : Number(e.target.value) as any,
                         })
                       }
                       className="w-full pl-10 pr-4 py-3 bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 rounded-2xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -1823,20 +2160,204 @@ export default function BillingPage() {
                       type="number"
                       min={0}
                       max={100}
-                      value={billFormData.gst || 0}
+                      value={billFormData.gst ?? ""}
                       onChange={(e) => {
-                        const newGst = Number(e.target.value);
+                        const rawVal = e.target.value;
+                        const newVal = rawVal === "" ? "" : Number(rawVal);
+                        const calcGst = Number(newVal) || 0;
                         const subTotal = billFormData.subTotal || 0;
-                        const taxTotal = (subTotal * newGst) / 100;
+                        const sumCharges = (charges: any) => {
+                          if (!charges) return 0;
+                          if (Array.isArray(charges)) return charges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                          return Number(charges) || 0;
+                        };
+                        const additional = sumCharges(billFormData.additionalCharges);
+                        const taxableAmount = subTotal + additional;
+                        const taxTotal = (taxableAmount * calcGst) / 100;
                         setBillFormData({
                           ...billFormData,
-                          gst: newGst,
+                          gst: newVal as any,
                           taxTotal,
-                          grandTotal: subTotal + taxTotal
+                          grandTotal: taxableAmount + taxTotal
                         });
                       }}
                       className="w-full pl-10 pr-4 py-3 bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 rounded-2xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
                     />
+                  </div>
+                </div>
+
+                {/* Additional Charges Section */}
+                <div className="col-span-full space-y-6 pt-6 border-t border-neutral-100 dark:border-neutral-800">
+                  <div className="flex justify-between items-end">
+                    <div>
+                      <h4 className="text-sm font-black uppercase tracking-widest text-neutral-900 dark:text-neutral-100">Additional Charges</h4>
+                      <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-tight mt-0.5">Extra services, loading or handling fees</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const sub = billFormData.subTotal || 0;
+                        const tax = billFormData.taxTotal || 0;
+                        const current = Array.isArray(billFormData.additionalCharges) ? billFormData.additionalCharges : [];
+                        const newCharge = { label: '', chargeType: 'quantity' as const, unit: 'Qty', value: 0, rate: 0, amount: 0 };
+                        const newCharges = [...current, newCharge];
+                        const additionalTotal = newCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                        setBillFormData({
+                          ...billFormData,
+                          additionalCharges: newCharges,
+                          grandTotal: sub + tax + additionalTotal
+                        });
+                      }}
+                      className="text-[10px] font-black uppercase tracking-widest bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl transition-all shadow-lg shadow-indigo-500/20 flex items-center gap-2 active:scale-95"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add New Charge
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {Array.isArray(billFormData.additionalCharges) && billFormData.additionalCharges.map((charge, idx) => (
+                      <div key={idx} className="bg-neutral-50 dark:bg-neutral-950/50 p-5 rounded-3xl border border-neutral-100 dark:border-neutral-800 transition-all hover:border-indigo-500/30 hover:shadow-xl hover:shadow-indigo-500/5 relative group">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newCharges = (billFormData.additionalCharges as any[]).filter((_, i) => i !== idx);
+                            const subTotal = billFormData.subTotal || 0;
+                            const taxTotal = billFormData.taxTotal || 0;
+                            const additionalTotal = newCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                            setBillFormData({ ...billFormData, additionalCharges: newCharges, grandTotal: subTotal + taxTotal + additionalTotal });
+                          }}
+                          className="absolute -top-2 -right-2 w-8 h-8 flex items-center justify-center bg-white dark:bg-neutral-900 text-rose-500 border border-neutral-100 dark:border-neutral-800 rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-all hover:bg-rose-50 dark:hover:bg-rose-950/30 active:scale-90"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] uppercase font-black text-neutral-400 tracking-wider">Label</label>
+                              <input
+                                type="text"
+                                placeholder="Label"
+                                value={charge.label}
+                                onChange={(e) => {
+                                  const newCharges = [...(billFormData.additionalCharges || [])];
+                                  newCharges[idx].label = e.target.value;
+                                  setBillFormData({ ...billFormData, additionalCharges: newCharges });
+                                }}
+                                className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] uppercase font-black text-neutral-400 tracking-wider">Type</label>
+                              <select
+                                value={charge.chargeType || 'quantity'}
+                                onChange={(e) => {
+                                  const newCharges = [...(billFormData.additionalCharges || [])];
+                                  newCharges[idx].chargeType = e.target.value as 'fixed' | 'quantity' | 'weight';
+                                  if (e.target.value === 'fixed') { newCharges[idx].value = 0; newCharges[idx].rate = 0; }
+                                  setBillFormData({ ...billFormData, additionalCharges: newCharges });
+                                }}
+                                className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                              >
+                                <option value="quantity">Qty Wise</option>
+                                <option value="weight">Wt Wise</option>
+                                <option value="fixed">Fixed</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3 items-end">
+                            {charge.chargeType !== 'fixed' ? (
+                              <>
+                                <div className="space-y-1.5">
+                                  <label className="text-[10px] uppercase font-black text-neutral-400 tracking-wider">{charge.chargeType === 'quantity' ? 'Unit' : 'Kg'}</label>
+                                  <input
+                                    type="number"
+                                    value={charge.value ?? ""}
+                                    onChange={(e) => {
+                                      const newVal = e.target.value === "" ? "" : Number(e.target.value);
+                                      const numVal = Number(newVal) || 0;
+                                      const newCharges = [...(billFormData.additionalCharges || [])];
+                                      newCharges[idx].value = newVal as any;
+                                      newCharges[idx].amount = numVal * ((newCharges[idx].rate as any) || 0);
+                                      const subTotal = billFormData.subTotal || 0;
+                                      const taxTotal = billFormData.taxTotal || 0;
+                                      const additionalTotal = newCharges.reduce((acc: number, c) => acc + (c.amount || 0), 0);
+                                      setBillFormData({ ...billFormData, additionalCharges: newCharges, grandTotal: subTotal + taxTotal + additionalTotal });
+                                    }}
+                                    className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                                  />
+                                </div>
+                                <div className="space-y-1.5">
+                                  <label className="text-[10px] uppercase font-black text-neutral-400 tracking-wider">Rate</label>
+                                  <input
+                                    type="number"
+                                    value={charge.rate ?? ""}
+                                    onChange={(e) => {
+                                      const newVal = e.target.value === "" ? "" : Number(e.target.value);
+                                      const numVal = Number(newVal) || 0;
+                                      const newCharges = [...(billFormData.additionalCharges || [])];
+                                      newCharges[idx].rate = newVal as any;
+                                      newCharges[idx].amount = numVal * ((newCharges[idx].value as any) || 0);
+                                      const subTotal = billFormData.subTotal || 0;
+                                      const taxTotal = billFormData.taxTotal || 0;
+                                      const additionalTotal = newCharges.reduce((acc: number, c) => acc + (c.amount || 0), 0);
+                                      setBillFormData({ ...billFormData, additionalCharges: newCharges, grandTotal: subTotal + taxTotal + additionalTotal });
+                                    }}
+                                    className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"
+                                  />
+                                </div>
+                              </>
+                            ) : (
+                              <div className="col-span-2 space-y-1.5">
+                                <label className="text-[10px] uppercase font-black text-neutral-400 tracking-wider">Amount</label>
+                                <input
+                                  type="number"
+                                  value={charge.amount ?? ""}
+                                  onChange={(e) => {
+                                    const newVal = e.target.value === "" ? "" : Number(e.target.value);
+                                    const newCharges = [...(billFormData.additionalCharges || [])];
+                                    newCharges[idx].amount = newVal as any;
+                                    const subTotal = billFormData.subTotal || 0;
+                                    const taxTotal = billFormData.taxTotal || 0;
+                                    const additionalTotal = newCharges.reduce((acc: number, c) => acc + (c.amount || 0), 0);
+                                    setBillFormData({ ...billFormData, additionalCharges: newCharges, grandTotal: subTotal + taxTotal + additionalTotal });
+                                  }}
+                                  className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"
+                                />
+                              </div>
+                            )}
+                          </div>
+                          {charge.chargeType !== 'fixed' && (
+                            <div className="pt-2 border-t border-dashed border-neutral-200 dark:border-neutral-800 flex justify-between items-center">
+                              <span className="text-[10px] font-black uppercase tracking-tight text-neutral-400">Total</span>
+                              <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">₹{(charge.amount || 0).toLocaleString()}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {(!Array.isArray(billFormData.additionalCharges) || billFormData.additionalCharges.length === 0) && (
+                      <div
+                        onClick={() => {
+                          const sub = billFormData.subTotal || 0;
+                          const tax = billFormData.taxTotal || 0;
+                          const newCharges = [{ label: '', chargeType: 'quantity' as const, unit: 'Qty', value: 0, rate: 0, amount: 0 }];
+                          const additionalTotal = newCharges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                          setBillFormData({
+                            ...billFormData,
+                            additionalCharges: newCharges,
+                            grandTotal: sub + tax + additionalTotal
+                          });
+                        }}
+                        className="col-span-full group flex flex-col items-center justify-center py-8 border-2 border-dashed border-neutral-100 dark:border-neutral-800 rounded-4xl bg-neutral-50 dark:bg-neutral-950/50 hover:bg-neutral-100 dark:hover:bg-neutral-800/50 cursor-pointer transition-all active:scale-[0.99]"
+                      >
+                        <div className="w-10 h-10 rounded-full bg-white dark:bg-neutral-900 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+                          <Plus className="w-5 h-5 text-neutral-400" />
+                        </div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Add Extra Charges</p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -2122,7 +2643,7 @@ export default function BillingPage() {
                           Price
                         </div>
                         <div className="px-1 flex items-center justify-center border-r border-slate-900">
-                          Mon.
+                          {invoicePreviewData.bill.billingCycle === 'days' ? 'Days' : 'Mon.'}
                         </div>
                         <div className="px-2 flex items-center justify-center">
                           Amount
@@ -2162,9 +2683,9 @@ export default function BillingPage() {
                               {Number(item.price || item.rate || 0).toFixed(2)}
                             </div>
                             <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                              {invoicePreviewData.bill.storageMonths ||
-                                item.months ||
-                                1}
+                              {invoicePreviewData.bill.billingCycle === 'days'
+                                ? (invoicePreviewData.bill.storageDays || 30)
+                                : (invoicePreviewData.bill.storageMonths || item.months || 1)}
                             </div>
                             <div className="px-2 py-1.5 text-[10px] font-bold flex items-center justify-end">
                               {Number(item.amount || item.total || 0).toFixed(
@@ -2202,7 +2723,7 @@ export default function BillingPage() {
                       {/* Totals & Remarks Row - ONLY ON LAST PAGE */}
                       {pageIdx === chunks.length - 1 ? (
                         <>
-                          <div className="flex border-b border-black h-36">
+                          <div className="flex border-b border-black min-h-36 flex-wrap">
                             <div className="w-1/2 p-4 font-semibold text-xs border-r border-black flex flex-col gap-1.5 font-mono leading-tight bg-slate-50/30">
                               <div className="flex">
                                 <span className="w-24 inline-block font-bold text-slate-500">
@@ -2247,7 +2768,7 @@ export default function BillingPage() {
                                 </span>
                               </div>
                             </div>
-                            <div className="w-1/2 flex flex-col font-bold text-xs p-4 font-mono justify-between bg-white">
+                            <div className="w-1/2 flex flex-col font-bold text-xs p-4 font-mono bg-white">
                               <div className="space-y-2">
                                 <div className="flex justify-between items-center">
                                   <span className="text-slate-500 font-bold uppercase tracking-tighter">
@@ -2260,12 +2781,45 @@ export default function BillingPage() {
                                     ).toFixed(2)}
                                   </span>
                                 </div>
+                                {(() => {
+                                  const charges = invoicePreviewData.bill.additionalCharges;
+                                  if (!charges) return null;
+                                  let total = 0;
+                                  if (Array.isArray(charges)) {
+                                    total = charges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                                    if (total <= 0) return null;
+                                    return (
+                                      <div className="space-y-1">
+                                        <div className="text-[10px] text-slate-400 font-bold uppercase border-b border-slate-100 pb-1 mb-1">Detailed Charges:</div>
+                                        {charges.map((c: any, i: number) => (
+                                          <div key={i} className="flex justify-between items-center text-[10px]">
+                                            <span className="text-slate-500 italic">{c.label || 'Extra Charge'}:</span>
+                                            <span className="text-black font-semibold">₹{Number(c.amount || 0).toFixed(2)}</span>
+                                          </div>
+                                        ))}
+                                        <div className="flex justify-between items-center border-t border-slate-100 mt-1 pt-1 font-black text-emerald-600">
+                                          <span className="uppercase tracking-tighter">Total Add. Charges:</span>
+                                          <span className="text-black">₹{total.toFixed(2)}</span>
+                                        </div>
+                                      </div>
+                                    );
+                                  } else if (Number(charges) > 0) {
+                                    total = Number(charges);
+                                    return (
+                                      <div className="flex justify-between items-center text-emerald-600">
+                                        <span className="font-bold uppercase tracking-tighter">Add. Charges:</span>
+                                        <span className="text-black">₹{total.toFixed(2)}</span>
+                                      </div>
+                                    );
+                                  }
+                                  return null;
+                                })()}
                                 {(invoicePreviewData.bill.taxTotal || 0) >
                                   0 && (
                                     <>
                                       <div className="flex justify-between items-center">
                                         <span className="text-slate-500 font-bold uppercase tracking-tighter">
-                                          SGST Total:
+                                          SGST @ {Number((invoicePreviewData.bill.gst || 18) / 2).toFixed(1)}%:
                                         </span>{" "}
                                         <span className="text-black">
                                           ₹
@@ -2277,7 +2831,7 @@ export default function BillingPage() {
                                       </div>
                                       <div className="flex justify-between items-center">
                                         <span className="text-slate-500 font-bold uppercase tracking-tighter">
-                                          CGST Total:
+                                          CGST @ {Number((invoicePreviewData.bill.gst || 18) / 2).toFixed(1)}%:
                                         </span>{" "}
                                         <span className="text-black">
                                           ₹
@@ -2316,46 +2870,17 @@ export default function BillingPage() {
                             </span>
                           </div>
 
-                          {/* Terms & Signature */}
-                          <div className="flex h-32">
-                            <div className="w-2/3 p-3 text-[9px] leading-relaxed border-r border-black flex flex-col justify-start text-slate-700 bg-white">
-                              <p className="font-black mb-1 text-black uppercase tracking-widest border-b border-black/10 inline-block">
-                                Terms & Conditions:
-                              </p>
-                              {companySettings?.termsAndConditions &&
-                                companySettings.termsAndConditions.length > 0 ? (
-                                companySettings.termsAndConditions.map(
-                                  (term, idx) => (
-                                    <p key={idx}>
-                                      {idx + 1}. {term}
-                                    </p>
-                                  ),
-                                )
-                              ) : (
-                                <>
-                                  <p>
-                                    1. Any complaint about this tax invoice
-                                    must be lodged within two working days.
-                                  </p>
-                                  <p>
-                                    2. Payment to be made in favour of JCRM
-                                    Cold Storage LLP.
-                                  </p>
-                                  <p>
-                                    3. Interest @24% p.a. will be charged if not
-                                    paid within 7 days.
-                                  </p>
-                                  <p>4. All goods are stored at owner's risk.</p>
-                                </>
-                              )}
+                          {/* Signature Section */}
+                          <div className="flex border-b border-black">
+                            <div className="w-1/2 p-3 text-[10px] border-r border-black flex flex-col justify-end bg-slate-50/20 italic text-slate-500">
+                              Note: This is a computer generated document and does not require a physical signature.
                             </div>
-                            <div className="w-1/3 flex flex-col justify-end items-center p-4 text-[11px] bg-slate-50/50 relative">
+                            <div className="w-1/2 flex flex-col justify-end items-center p-6 text-[11px] bg-slate-50/50 relative min-h-32">
                               {/* Signature Image Container */}
-                              <div className="absolute top-2 bottom-14 left-4 right-4 flex items-center justify-center pointer-events-none">
+                              <div className="absolute top-2 bottom-12 left-4 right-4 flex items-center justify-center pointer-events-none">
                                 {companySettings?.signatureUrl && (
                                   <img
                                     src={companySettings.signatureUrl}
-                                    alt="Signature"
                                     className="max-h-full max-w-full object-contain mix-blend-multiply"
                                     crossOrigin="anonymous"
                                   />
@@ -2363,7 +2888,7 @@ export default function BillingPage() {
                               </div>
 
                               {/* Signature Text Section */}
-                              <div className="w-full border-t-2 border-slate-900 text-center font-black pt-2 uppercase tracking-tighter relative z-10">
+                              <div className="w-full border-t-2 border-slate-900 text-center font-black pt-2 uppercase tracking-tighter relative z-10 bg-slate-50/80">
                                 {companySettings?.signatureLabel ||
                                   "Authorized Signatory"}
                                 <div className="text-[9px] font-bold text-slate-500 mt-1 capitalize">
@@ -2392,6 +2917,63 @@ export default function BillingPage() {
                   </div>
                 ));
               })()}
+
+              {/* Page 2: Terms & Conditions */}
+              {/* <div 
+                className="w-[210mm] min-h-[297mm] bg-white text-black p-[20mm] shadow-md border border-slate-200 print:shadow-none print:border-none print:w-full font-sans text-sm mx-auto mt-8 print:mt-0 print:break-before-page"
+              >
+                <div className="border border-black h-full flex flex-col p-10 bg-slate-50/10 relative">
+                  <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-8">
+                    <h2 className="text-2xl font-black uppercase tracking-widest text-slate-900">Terms & Conditions</h2>
+                    <div className="text-right">
+                       <p className="text-xs font-bold text-slate-500 uppercase">Document Reference</p>
+                       <p className="text-sm font-black italic">#{invoicePreviewData.bill.billNumber}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6 text-sm leading-relaxed text-slate-800 flex-1">
+                    {companySettings?.termsAndConditions && companySettings.termsAndConditions.length > 0 ? (
+                      companySettings.termsAndConditions.map((term, idx) => (
+                        <div key={idx} className="flex gap-4 items-start bg-white p-4 rounded-lg border border-slate-100 shadow-sm">
+                          <span className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs">{idx + 1}</span>
+                          <p className="flex-1 font-medium">{term}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="space-y-4">
+                        {[
+                          "Any complaint about this tax invoice must be lodged within two working days of receipt.",
+                          "All payments must be made in favour of JCRM Cold Storage LLP via Bank Transfer/Cheque/Draft.",
+                          "Overdue accounts will be charged interest at a rate of 24% per annum after 7 days of the invoice date.",
+                          "All goods are stored under the owner's risk; the company is not responsible for any natural depletion in weight or quality.",
+                          "The warehouse reserves the right to lien on the goods for unpaid storage charges and other dues.",
+                          "Disputes, if any, shall be subject to Surat Jurisdiction exclusively."
+                        ].map((text, idx) => (
+                          <div key={idx} className="flex gap-4 items-start bg-white p-4 rounded-lg border border-slate-100 shadow-sm">
+                            <span className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs">{idx + 1}</span>
+                            <p className="flex-1 font-medium">{text}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-20 flex justify-between items-end border-t border-slate-200 pt-8">
+                     <div className="text-[10px] font-bold text-slate-400 italic">
+                       Continued from Page 1 — Bill No: {invoicePreviewData.bill.billNumber}
+                     </div>
+                     <div className="text-center w-48">
+                       <div className="border-t border-black pt-2 text-[10px] font-black uppercase">
+                          Receiver's Signature
+                       </div>
+                     </div>
+                  </div>
+
+                  <div className="absolute bottom-6 w-full text-center left-0 text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+                    PAGE 2 of 2
+                  </div>
+                </div>
+              </div> */}
             </div>
 
             <style jsx global>{`
@@ -2449,6 +3031,5 @@ export default function BillingPage() {
         </div>
       )}
     </div>
-    // </div>
   );
 }

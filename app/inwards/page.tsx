@@ -69,7 +69,13 @@ export default function InwardsPage({
     year: new Date().getFullYear().toString(),
     gst: 18,
     outwardDate: new Date().toISOString().split('T')[0],
+    additionalCharges: [] as any[],
+    storageMonths: 1,
+    storageDays: 30,
+    billingCycle: 'months' as 'months' | 'days',
   });
+
+  const [existingCharges, setExistingCharges] = useState<{ inwardDate: string, charges: any[] }[]>([]);
 
   // Company Settings State
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
@@ -178,7 +184,27 @@ export default function InwardsPage({
   const handleOpenModal = (inward?: Inward) => {
     if (inward) {
       setEditingInward(inward);
-      setFormData(inward);
+
+      // Migrate legacy additionalCharges if it's a number/string
+      let migratedCharges = inward.additionalCharges;
+      if (migratedCharges && !Array.isArray(migratedCharges)) {
+        const amount = Number(migratedCharges) || 0;
+        migratedCharges = amount > 0 ? [{ 
+          label: 'Legacy Charge', 
+          chargeType: 'fixed' as const, 
+          amount,
+          unit: 'fixed',
+          value: 0,
+          rate: 0
+        }] : [];
+      } else if (!migratedCharges) {
+        migratedCharges = [];
+      }
+
+      setFormData({
+        ...inward,
+        additionalCharges: migratedCharges
+      });
     } else {
       setEditingInward(null);
       setFormData({
@@ -187,6 +213,7 @@ export default function InwardsPage({
         unitWeight: 0,
         totalWeight: 0,
         remainingWeight: 0,
+        additionalCharges: []
       });
     }
     setIsModalOpen(true);
@@ -294,6 +321,17 @@ export default function InwardsPage({
 
   const handleGenerateBill = () => {
     if (selectedIds.size === 0) return;
+
+    // Find all existing charges from selected inwards
+    const selectedInwards = inwards.filter(i => selectedIds.has(i.id));
+    const chargesSummary = selectedInwards
+      .filter(i => i.additionalCharges && i.additionalCharges.length > 0)
+      .map(i => ({
+        inwardDate: i.inwardDate,
+        charges: i.additionalCharges || []
+      }));
+
+    setExistingCharges(chargesSummary);
     setIsBillParamsModalOpen(true);
   };
 
@@ -307,7 +345,11 @@ export default function InwardsPage({
           inwardIds: Array.from(selectedIds),
           billPeriod: `${billParams.month} ${billParams.year}`,
           gstRate: billParams.gst,
-          outwardDate: billParams.outwardDate
+          outwardDate: billParams.outwardDate,
+          additionalCharges: billParams.additionalCharges,
+          storageMonths: billParams.storageMonths,
+          storageDays: billParams.storageDays,
+          billingCycle: billParams.billingCycle
         }),
       });
 
@@ -557,6 +599,7 @@ export default function InwardsPage({
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Party</th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Product</th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Goods Condition</th>
+                  <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Add. Charges</th>
                   <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Outward</th>
                   <th scope="col" className="px-6 py-4 text-right text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Action</th>
                 </tr>
@@ -617,6 +660,17 @@ export default function InwardsPage({
                           {inward.goodsCondition === 'Good' && <CheckCircle2 className="w-4 h-4 text-emerald-500 mr-1.5" />}
                           {inward.goodsCondition || '-'}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
+                        {(() => {
+                          const charges = inward.additionalCharges;
+                          if (!charges) return '-';
+                          if (Array.isArray(charges)) {
+                            const total = charges.reduce((acc, c) => acc + (c.amount || 0), 0);
+                            return total > 0 ? `₹${total.toLocaleString()}` : '-';
+                          }
+                          return `₹${Number(charges).toLocaleString()}`;
+                        })()}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button
@@ -699,166 +753,289 @@ export default function InwardsPage({
               </button>
             </div>
 
-            <form onSubmit={handleSave} className="flex flex-col flex-1 overflow-y-auto p-6 text-sm">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Inward Date <span className="text-rose-500">*</span></label>
-                  <input
-                    type="date"
-                    required
-                    value={formData.inwardDate || ''}
-                    onChange={(e) => setFormData({ ...formData, inwardDate: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm"
-                  />
-                </div>
+            <form onSubmit={handleSave} className="flex flex-col flex-1 min-h-0">
+              <div className="flex-1 overflow-y-auto p-6 text-sm custom-scrollbar">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Inward Date <span className="text-rose-500">*</span></label>
+                    <input
+                      type="date"
+                      required
+                      value={formData.inwardDate || ''}
+                      onChange={(e) => setFormData({ ...formData, inwardDate: e.target.value })}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm"
+                    />
+                  </div>
 
-                <div className="space-y-2">
-                  <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Party <span className="text-rose-500">*</span></label>
-                  <select
-                    required
-                    value={formData.partyId || ''}
-                    onChange={(e) => setFormData({ ...formData, partyId: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm"
-                  >
-                    <option value="" disabled>Select Party</option>
-                    {parties.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
-                  </select>
-                </div>
+                  <div className="space-y-2">
+                    <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Party <span className="text-rose-500">*</span></label>
+                    <select
+                      required
+                      value={formData.partyId || ''}
+                      onChange={(e) => setFormData({ ...formData, partyId: e.target.value })}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm"
+                    >
+                      <option value="" disabled>Select Party</option>
+                      {parties.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                    </select>
+                  </div>
 
-                <div className="space-y-2">
-                  <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Product <span className="text-rose-500">*</span></label>
-                  <select
-                    required
-                    value={formData.productId || ''}
-                    onChange={(e) => setFormData({ ...formData, productId: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm"
-                  >
-                    <option value="" disabled>Select Product</option>
-                    {products.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
-                  </select>
-                </div>
+                  <div className="space-y-2">
+                    <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Product <span className="text-rose-500">*</span></label>
+                    <select
+                      required
+                      value={formData.productId || ''}
+                      onChange={(e) => setFormData({ ...formData, productId: e.target.value })}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm"
+                    >
+                      <option value="" disabled>Select Product</option>
+                      {products.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                    </select>
+                  </div>
 
-                <div className="space-y-2">
-                  <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Quantity (Units/Bags) <span className="text-rose-500">*</span></label>
-                  <input
-                    type="number"
-                    required
-                    min={0}
-                    placeholder="e.g. 100"
-                    value={formData.quantity === 0 ? "" : (formData.quantity || "")}
-                    onChange={(e) => {
-                      const qty = e.target.value === "" ? 0 : Number(e.target.value);
-                      const unitWt = formData.unitWeight || 0;
-                      const totalWt = qty * unitWt;
-                      setFormData({
-                        ...formData,
-                        quantity: qty,
-                        totalWeight: totalWt,
-                        remainingWeight: editingInward ? formData.remainingWeight : totalWt
-                      });
-                    }}
-                    className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm"
-                  />
-                </div>
+                  <div className="space-y-2">
+                    <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Quantity (Units/Bags) <span className="text-rose-500">*</span></label>
+                    <input
+                      type="number"
+                      required
+                      min={0}
+                      placeholder="e.g. 100"
+                      value={formData.quantity === 0 ? "" : (formData.quantity || "")}
+                      onChange={(e) => {
+                        const qty = e.target.value === "" ? 0 : Number(e.target.value);
+                        const unitWt = formData.unitWeight || 0;
+                        const totalWt = qty * unitWt;
+                        setFormData({
+                          ...formData,
+                          quantity: qty,
+                          totalWeight: totalWt,
+                          remainingWeight: editingInward ? formData.remainingWeight : totalWt
+                        });
+                      }}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm"
+                    />
+                  </div>
 
-                <div className="space-y-2">
-                  <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Unit Weight (kg) <span className="text-rose-500">*</span></label>
-                  <input
-                    type="number"
-                    required
-                    min={0}
-                    step="0.01"
-                    placeholder="e.g. 50.0"
-                    value={formData.unitWeight === 0 ? "" : (formData.unitWeight || "")}
-                    onChange={(e) => {
-                      const unitWt = e.target.value === "" ? 0 : Number(e.target.value);
-                      const qty = formData.quantity || 0;
-                      const totalWt = qty * unitWt;
-                      setFormData({
-                        ...formData,
-                        unitWeight: unitWt,
-                        totalWeight: totalWt,
-                        remainingWeight: editingInward ? formData.remainingWeight : totalWt
-                      });
-                    }}
-                    className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm"
-                  />
-                </div>
+                  <div className="space-y-2">
+                    <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Unit Weight (kg) <span className="text-rose-500">*</span></label>
+                    <input
+                      type="number"
+                      required
+                      min={0}
+                      step="0.01"
+                      placeholder="e.g. 50.0"
+                      value={formData.unitWeight === 0 ? "" : (formData.unitWeight || "")}
+                      onChange={(e) => {
+                        const unitWt = e.target.value === "" ? 0 : Number(e.target.value);
+                        const qty = formData.quantity || 0;
+                        const totalWt = qty * unitWt;
+                        setFormData({
+                          ...formData,
+                          unitWeight: unitWt,
+                          totalWeight: totalWt,
+                          remainingWeight: editingInward ? formData.remainingWeight : totalWt
+                        });
+                      }}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm"
+                    />
+                  </div>
 
-                <div className="space-y-2">
-                  <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Total Weight (kg)</label>
-                  <input
-                    type="number"
-                    readOnly
-                    placeholder="Calculated automatically"
-                    value={formData.totalWeight || ""}
-                    className="w-full px-4 py-2.5 bg-neutral-50 dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 font-bold shadow-sm cursor-not-allowed border-dashed"
-                  />
-                </div>
+                  <div className="space-y-2">
+                    <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Total Weight (kg)</label>
+                    <input
+                      type="number"
+                      readOnly
+                      placeholder="Calculated automatically"
+                      value={formData.totalWeight || ""}
+                      className="w-full px-4 py-2.5 bg-neutral-50 dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 font-bold shadow-sm cursor-not-allowed border-dashed"
+                    />
+                  </div>
 
-                <div className="space-y-2">
-                  <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Price (₹ Per Unit/kg)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    placeholder="0.00"
-                    value={formData.price === 0 ? "" : (formData.price || "")}
-                    onChange={(e) => setFormData({ ...formData, price: e.target.value === "" ? 0 : Number(e.target.value) })}
-                    className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm"
-                  />
-                </div>
+                  <div className="space-y-2">
+                    <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Price (₹ Per Unit/kg)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      placeholder="0.00"
+                      value={formData.price === 0 ? "" : (formData.price || "")}
+                      onChange={(e) => setFormData({ ...formData, price: e.target.value === "" ? 0 : Number(e.target.value) })}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm"
+                    />
+                  </div>
 
-                <div className="space-y-2">
-                  <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Additional Charges (₹)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    placeholder="0.00"
-                    value={formData.additionalCharges === 0 ? "" : (formData.additionalCharges || "")}
-                    onChange={(e) => setFormData({ ...formData, additionalCharges: e.target.value === "" ? 0 : Number(e.target.value) })}
-                    className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm"
-                  />
-                </div>
+                  {/* Additional Charges Section */}
+                  <div className="col-span-1 md:col-span-2 mt-4">
+                    <div className="flex justify-between items-center mb-3">
+                      <label className="block font-bold text-neutral-700 dark:text-neutral-300">Additional Charges</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const current = Array.isArray(formData.additionalCharges) ? formData.additionalCharges : [];
+                          setFormData({
+                            ...formData,
+                            additionalCharges: [...current, { label: '', chargeType: 'quantity' as const, unit: 'Box', value: 0, rate: 0, amount: 0 }]
+                          });
+                        }}
+                        className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 bg-indigo-50 dark:bg-indigo-950/30 px-2 py-1 rounded-md"
+                      >
+                        <Plus className="w-3 h-3" /> Add Charge
+                      </button>
+                    </div>
 
-                <div className="space-y-2">
-                  <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Goods Condition</label>
-                  <select
-                    value={formData.goodsCondition || ''}
-                    onChange={(e) => setFormData({ ...formData, goodsCondition: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm"
-                  >
-                    <option value="">Select Condition</option>
-                    <option value="Good">Good</option>
-                    <option value="Fair">Fair</option>
-                    <option value="Damaged">Damaged</option>
-                  </select>
-                </div>
+                    <div className="space-y-3">
+                      {Array.isArray(formData.additionalCharges) && formData.additionalCharges.length > 0 ? (
+                        formData.additionalCharges.map((charge, idx) => (
+                          <div key={idx} className="grid grid-cols-12 gap-2 items-end bg-neutral-50 dark:bg-neutral-950 p-3 rounded-xl border border-neutral-100 dark:border-neutral-800">
+                            <div className="col-span-4 space-y-1">
+                              <label className="text-[10px] uppercase font-bold text-neutral-400">Label</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. Loading"
+                                value={charge.label || ''}
+                                onChange={(e) => {
+                                  const newCharges = [...(formData.additionalCharges as any[])];
+                                  newCharges[idx].label = e.target.value;
+                                  setFormData({ ...formData, additionalCharges: newCharges });
+                                }}
+                                className="w-full px-2 py-1.5 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs"
+                              />
+                            </div>
+                            <div className="col-span-3 space-y-1">
+                              <label className="text-[10px] uppercase font-bold text-neutral-400">Type</label>
+                              <select
+                                value={charge.chargeType || 'quantity'}
+                                onChange={(e) => {
+                                  const newCharges = [...(formData.additionalCharges as any[])];
+                                  newCharges[idx].chargeType = e.target.value as 'fixed' | 'quantity' | 'weight';
+                                  if (e.target.value === 'fixed') {
+                                    newCharges[idx].value = 0;
+                                    newCharges[idx].rate = 0;
+                                  }
+                                  setFormData({ ...formData, additionalCharges: newCharges });
+                                }}
+                                className="w-full px-2 py-1.5 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs"
+                              >
+                                <option value="quantity">Qty Wise</option>
+                                <option value="weight">Wt Wise</option>
+                                <option value="fixed">Fixed</option>
+                              </select>
+                            </div>
 
-                <div className="col-span-1 md:col-span-2 space-y-2">
-                  <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Remarks / Private Notes</label>
-                  <textarea
-                    rows={3}
-                    value={formData.remarks || ''}
-                    onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm resize-none"
-                    placeholder="Any additional information..."
-                  />
+                            {charge.chargeType !== 'fixed' ? (
+                              <>
+                                <div className="col-span-2 space-y-1">
+                                  <label className="text-[10px] uppercase font-bold text-neutral-400">{charge.chargeType === 'quantity' ? 'Unit' : 'Kg'}</label>
+                                  <input
+                                    type="number"
+                                    placeholder="Value"
+                                    value={charge.value || ''}
+                                    onChange={(e) => {
+                                      const newCharges = [...(formData.additionalCharges as any[])];
+                                      newCharges[idx].value = Number(e.target.value);
+                                      newCharges[idx].amount = newCharges[idx].value * (newCharges[idx].rate || 0);
+                                      setFormData({ ...formData, additionalCharges: newCharges });
+                                    }}
+                                    className="w-full px-2 py-1.5 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs"
+                                  />
+                                </div>
+                                <div className="col-span-2 space-y-1">
+                                  <label className="text-[10px] uppercase font-bold text-neutral-400">Rate</label>
+                                  <input
+                                    type="number"
+                                    placeholder="Rate"
+                                    value={charge.rate || ''}
+                                    onChange={(e) => {
+                                      const newCharges = [...(formData.additionalCharges as any[])];
+                                      newCharges[idx].rate = Number(e.target.value);
+                                      newCharges[idx].amount = newCharges[idx].rate * (newCharges[idx].value || 0);
+                                      setFormData({ ...formData, additionalCharges: newCharges });
+                                    }}
+                                    className="w-full px-2 py-1.5 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs"
+                                  />
+                                </div>
+                              </>
+                            ) : (
+                              <div className="col-span-4 space-y-1">
+                                <label className="text-[10px] uppercase font-bold text-neutral-400">Amount</label>
+                                <input
+                                  type="number"
+                                  placeholder="Total Amount"
+                                  value={charge.amount || ''}
+                                  onChange={(e) => {
+                                    const newCharges = [...(formData.additionalCharges as any[])];
+                                    newCharges[idx].amount = Number(e.target.value);
+                                    setFormData({ ...formData, additionalCharges: newCharges });
+                                  }}
+                                  className="w-full px-4 py-1.5 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs"
+                                />
+                              </div>
+                            )}
+
+                            <div className="col-span-1 pb-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newCharges = (formData.additionalCharges as any[]).filter((_, i) => i !== idx);
+                                  setFormData({ ...formData, additionalCharges: newCharges });
+                                }}
+                                className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-md"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+
+                            {charge.chargeType !== 'fixed' && (
+                              <div className="col-span-12 text-right">
+                                <span className="text-[10px] font-bold text-neutral-400">Total: ₹{(charge.amount || 0).toLocaleString()}</span>
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-xs text-neutral-500 italic text-center py-2 border border-dashed border-neutral-200 dark:border-neutral-800 rounded-xl">No additional charges added</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Goods Condition</label>
+                    <select
+                      value={formData.goodsCondition || ''}
+                      onChange={(e) => setFormData({ ...formData, goodsCondition: e.target.value })}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm"
+                    >
+                      <option value="">Select Condition</option>
+                      <option value="Good">Good</option>
+                      <option value="Fair">Fair</option>
+                      <option value="Damaged">Damaged</option>
+                    </select>
+                  </div>
+
+                  <div className="col-span-1 md:col-span-2 space-y-2">
+                    <label className="block font-semibold text-neutral-700 dark:text-neutral-300">Remarks / Private Notes</label>
+                    <textarea
+                      rows={3}
+                      value={formData.remarks || ''}
+                      onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-xl text-neutral-900 dark:text-neutral-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium shadow-sm resize-none"
+                      placeholder="Any additional information..."
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="mt-8 flex justify-end gap-3 border-t border-neutral-200 dark:border-neutral-800 pt-5">
+              <div className="flex justify-end gap-3 border-t border-neutral-200 dark:border-neutral-800 px-6 py-4 bg-neutral-50/50 dark:bg-neutral-800/50">
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="px-6 py-2.5 rounded-xl border border-neutral-300 dark:border-neutral-700 font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-all active:scale-95"
+                  className="px-6 py-2 rounded-xl border border-neutral-300 dark:border-neutral-700 font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-all active:scale-95"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition-all shadow-lg shadow-indigo-200 dark:shadow-indigo-900/20 active:scale-95"
+                  className="px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition-all shadow-lg shadow-indigo-200 dark:shadow-indigo-900/20 active:scale-95"
                 >
                   {editingInward ? 'Update Record' : 'Save Inward Entry'}
                 </button>
@@ -871,7 +1048,7 @@ export default function InwardsPage({
       {isBillParamsModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setIsBillParamsModalOpen(false)}></div>
-          <div className="relative bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-md border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in duration-200">
+          <div className="relative bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-md border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
             <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50">
               <h3 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
                 Add Bill Month
@@ -881,7 +1058,7 @@ export default function InwardsPage({
               </button>
             </div>
 
-            <div className="p-6 space-y-6">
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Month</label>
@@ -902,7 +1079,7 @@ export default function InwardsPage({
                     onChange={(e) => setBillParams({ ...billParams, year: e.target.value })}
                     className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
                   >
-                    {[2024, 2025, 2026].map(y => (
+                    {Array.from({ length: 21 }, (_, i) => new Date().getFullYear() - 10 + i).map(y => (
                       <option key={y} value={y.toString()}>{y}</option>
                     ))}
                   </select>
@@ -937,6 +1114,222 @@ export default function InwardsPage({
                 </div>
               </div>
 
+              {/* Existing Charges Display */}
+              {existingCharges.length > 0 && (
+                <div className="space-y-4 p-5 bg-indigo-50/50 dark:bg-indigo-950/10 border border-indigo-100 dark:border-indigo-900/30 rounded-2xl">
+                  <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400 font-bold text-xs uppercase tracking-widest">
+                    <Calculator className="w-4 h-4" />
+                    Older Additional Charges
+                  </div>
+                  <div className="space-y-5 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
+                    {existingCharges.map((item, i) => (
+                      <div key={i} className="text-xs space-y-2.5 border-b border-indigo-100/50 dark:border-indigo-900/50 pb-3 last:border-0 last:pb-0">
+                        <div className="font-bold text-slate-500 flex justify-between items-center text-[11px]">
+                          <span className="uppercase">DATE: {formatDate(item.inwardDate)}</span>
+                          <span className="bg-indigo-100 dark:bg-indigo-900/50 px-2 py-0.5 rounded-md text-indigo-600 dark:text-indigo-400 font-black">₹{item.charges.reduce((sum, c) => sum + (c.amount || 0), 0).toLocaleString()}</span>
+                        </div>
+                        {item.charges.map((c, j) => (
+                          <div key={j} className="flex justify-between items-center pl-3 border-l-2 border-indigo-200 dark:border-indigo-800">
+                            <div className="flex flex-col">
+                              <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{c.label || 'Extra Charge'}</span>
+                              <span className="text-[10px] font-medium text-slate-500 uppercase tracking-tight">{c.chargeType} {c.chargeType !== 'fixed' ? `@ ₹${c.rate}` : ''}</span>
+                            </div>
+                            <span className="text-sm font-black text-slate-900 dark:text-slate-100">₹{(c.amount || 0).toLocaleString()}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Additional Charges Section */}
+              <div className="space-y-4 pt-2">
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Additional Charges</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const current = Array.isArray(billParams.additionalCharges) ? billParams.additionalCharges : [];
+                      setBillParams({
+                        ...billParams,
+                        additionalCharges: [...current, { label: '', chargeType: 'quantity' as const, unit: 'Qty', value: 0, rate: 0, amount: 0 }]
+                      });
+                    }}
+                    className="text-[10px] font-bold text-indigo-500 hover:text-indigo-400 flex items-center gap-1 bg-indigo-500/10 px-2 py-1 rounded-md"
+                  >
+                    <Plus className="w-3 h-3" /> Add Charge
+                  </button>
+                </div>
+
+                <div className="space-y-3 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
+                  {Array.isArray(billParams.additionalCharges) && billParams.additionalCharges.map((charge, idx) => (
+                    <div key={idx} className="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4 shadow-sm relative group overflow-hidden">
+                      <div className="grid grid-cols-12 gap-3">
+                        <div className="col-span-12 sm:col-span-5 space-y-1">
+                          <label className="text-[10px] uppercase font-black text-slate-400 tracking-tighter">Label</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Loading"
+                            value={charge.label}
+                            onChange={(e) => {
+                              const newCharges = [...billParams.additionalCharges];
+                              newCharges[idx].label = e.target.value;
+                              setBillParams({ ...billParams, additionalCharges: newCharges });
+                            }}
+                            className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                          />
+                        </div>
+                        <div className="col-span-12 sm:col-span-7 space-y-1">
+                          <label className="text-[10px] uppercase font-black text-slate-400 tracking-tighter">Type</label>
+                          <select
+                            value={charge.chargeType || 'quantity'}
+                            onChange={(e) => {
+                              const newCharges = [...billParams.additionalCharges];
+                              newCharges[idx].chargeType = e.target.value as 'fixed' | 'quantity' | 'weight';
+                              if (e.target.value === 'fixed') {
+                                newCharges[idx].value = 0;
+                                newCharges[idx].rate = 0;
+                              }
+                              setBillParams({ ...billParams, additionalCharges: newCharges });
+                            }}
+                            className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                          >
+                            <option value="quantity">Qty Wise</option>
+                            <option value="weight">Wt Wise</option>
+                            <option value="fixed">Fixed</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-12 gap-3 items-end">
+                        {charge.chargeType !== 'fixed' ? (
+                          <>
+                            <div className="col-span-5 space-y-1">
+                              <label className="text-[10px] uppercase font-black text-slate-400 tracking-tighter">{charge.chargeType === 'quantity' ? 'Unit / Qty' : 'Weight (Kg)'}</label>
+                              <input
+                                type="number"
+                                placeholder="0"
+                                value={charge.value || ''}
+                                onChange={(e) => {
+                                  const newCharges = [...billParams.additionalCharges];
+                                  newCharges[idx].value = Number(e.target.value);
+                                  newCharges[idx].amount = newCharges[idx].value * (newCharges[idx].rate || 0);
+                                  setBillParams({ ...billParams, additionalCharges: newCharges });
+                                }}
+                                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                              />
+                            </div>
+                            <div className="col-span-4 space-y-1">
+                              <label className="text-[10px] uppercase font-black text-slate-400 tracking-tighter">Rate (₹)</label>
+                              <input
+                                type="number"
+                                placeholder="0"
+                                value={charge.rate || ''}
+                                onChange={(e) => {
+                                  const newCharges = [...billParams.additionalCharges];
+                                  newCharges[idx].rate = Number(e.target.value);
+                                  newCharges[idx].amount = newCharges[idx].rate * (newCharges[idx].value || 0);
+                                  setBillParams({ ...billParams, additionalCharges: newCharges });
+                                }}
+                                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"
+                              />
+                            </div>
+                          </>
+                        ) : (
+                          <div className="col-span-9 space-y-1">
+                            <label className="text-[10px] uppercase font-black text-slate-400 tracking-tighter">Fixed Amount (₹)</label>
+                            <input
+                              type="number"
+                              placeholder="0"
+                              value={charge.amount || ''}
+                              onChange={(e) => {
+                                const newCharges = [...billParams.additionalCharges];
+                                newCharges[idx].amount = Number(e.target.value);
+                                setBillParams({ ...billParams, additionalCharges: newCharges });
+                              }}
+                              className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"
+                            />
+                          </div>
+                        )}
+                        <div className="col-span-3 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newCharges = billParams.additionalCharges.filter((_, i) => i !== idx);
+                              setBillParams({ ...billParams, additionalCharges: newCharges });
+                            }}
+                            className="p-2.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl transition-all"
+                            title="Remove Charge"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {charge.chargeType !== 'fixed' && (
+                        <div className="flex justify-end pt-1 border-t border-slate-100 dark:border-slate-800/50">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                            Subtotal: <span className="text-indigo-600 dark:text-indigo-400">₹{(charge.amount || 0).toLocaleString()}</span>
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {(!Array.isArray(billParams.additionalCharges) || billParams.additionalCharges.length === 0) && (
+                    <div
+                      className="py-10 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-all group"
+                      onClick={() => setBillParams({
+                        ...billParams,
+                        additionalCharges: [{ label: '', chargeType: 'quantity' as const, unit: 'Qty', value: 0, rate: 0, amount: 0 }]
+                      })}
+                    >
+                      <Plus className="w-8 h-8 text-slate-300 group-hover:text-indigo-500 mx-auto mb-2 transition-colors" />
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-slate-600">Click to add charges</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-slate-400">Billing Cycle</label>
+                  <select
+                    value={billParams.billingCycle}
+                    onChange={(e) => setBillParams({ ...billParams, billingCycle: e.target.value as 'months' | 'days' })}
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                  >
+                    <option value="months">Months-wise</option>
+                    <option value="days">Days-wise</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                    {billParams.billingCycle === 'days' ? 'Storage Days' : 'Storage Months'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={0}
+                      value={(billParams.billingCycle === 'days' ? billParams.storageDays : billParams.storageMonths) === 0 ? '' : (billParams.billingCycle === 'days' ? billParams.storageDays : billParams.storageMonths)}
+                      onChange={(e) => {
+                        const val = e.target.value === "" ? 0 : Number(e.target.value);
+                        if (billParams.billingCycle === 'days') {
+                          setBillParams({ ...billParams, storageDays: val });
+                        } else {
+                          setBillParams({ ...billParams, storageMonths: val });
+                        }
+                      }}
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white font-bold focus:ring-2 focus:ring-indigo-500 outline-none pr-10"
+                      placeholder={billParams.billingCycle === 'days' ? "e.g. 30" : "e.g. 1"}
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">
+                      {billParams.billingCycle === 'days' ? 'Days' : 'Mon'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               <div className="bg-amber-50 dark:bg-amber-950/20 p-4 rounded-2xl border border-amber-100 dark:border-amber-900/40">
                 <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
                   Generating a bill for <span className="font-bold">{selectedIds.size}</span> selected inward {selectedIds.size === 1 ? 'entry' : 'entries'}. This action will create a formal invoice.
@@ -944,7 +1337,7 @@ export default function InwardsPage({
               </div>
             </div>
 
-            <div className="px-6 py-5 border-t border-slate-100 dark:border-slate-800 flex gap-3">
+            <div className="px-6 py-5 border-t border-slate-100 dark:border-slate-800 flex gap-3 bg-slate-50/50 dark:bg-slate-800/50">
               <button
                 onClick={() => setIsBillParamsModalOpen(false)}
                 className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
@@ -968,7 +1361,7 @@ export default function InwardsPage({
           <div className="flex flex-col max-h-[95vh] w-full max-w-5xl bg-slate-100 rounded-lg shadow-2xl relative print:h-auto print:max-h-none print:shadow-none print:bg-white">
             {/* Modal Header controls (Hidden on Print) */}
             <div className="flex justify-between items-center p-4 bg-white border-b print:hidden rounded-t-lg">
-              <h2 className="text-xl font-bold flex items-center gap-2">
+              <h2 className="text-xl font-bold flex items-center gap-2 text-black">
                 <FileText className="text-indigo-600" />
                 Invoice Preview
               </h2>
@@ -1109,7 +1502,7 @@ export default function InwardsPage({
                         <div>CASH/CREDIT Memo</div>
                         <div>SAC: {companySettings?.sacCode || "996721"}</div>
                         <div>Bill No: {invoicePreviewData.bill.billNumber}</div>
-                        <div>Date: {formatDate(new Date().toISOString())}</div>
+                        <div>Date: {formatDate(invoicePreviewData.bill.outwardDate || invoicePreviewData.bill.date)}</div>
                       </div>
                     </div>
                   </div>                  {/* Product Header */}
@@ -1121,7 +1514,7 @@ export default function InwardsPage({
                     <div className="px-1 flex items-center justify-center border-r border-slate-900">Unit.Wt</div>
                     <div className="px-1 flex items-center justify-center border-r border-slate-900">Tot.Wt</div>
                     <div className="px-1 flex items-center justify-center border-r border-slate-900">Price</div>
-                    <div className="px-1 flex items-center justify-center border-r border-slate-900">Mon.</div>
+                    <div className="px-1 flex items-center justify-center border-r border-slate-900">{invoicePreviewData.bill.billingCycle === 'days' ? 'Days' : 'Mon.'}</div>
                     <div className="px-2 flex items-center justify-center">Amount</div>
                   </div>
 
@@ -1161,9 +1554,9 @@ export default function InwardsPage({
                               {Number(item.price || item.rate || 0).toFixed(2)}
                             </div>
                             <div className="px-1 py-1.5 text-[9px] border-r border-black/20 flex items-center justify-center">
-                              {invoicePreviewData.bill.storageMonths ||
-                                item.months ||
-                                1}
+                              {invoicePreviewData.bill.billingCycle === 'days'
+                                ? (invoicePreviewData.bill.storageDays || 30)
+                                : (invoicePreviewData.bill.storageMonths || item.months || 1)}
                             </div>
                             <div className="px-2 py-1.5 text-[10px] font-bold flex items-center justify-end">
                               {Number(item.amount || item.total || 0).toFixed(2)}
@@ -1196,7 +1589,7 @@ export default function InwardsPage({
                     );
                   })()}
                   {/* Totals & Remarks Row */}
-                  <div className="flex border-b border-black h-36">
+                  <div className="flex border-b border-black min-h-36 flex-wrap">
                     <div className="w-1/2 p-4 font-semibold text-xs border-r border-black flex flex-col gap-1.5 font-mono leading-tight bg-slate-50/30">
                       <div className="flex">
                         <span className="w-24 inline-block font-bold text-slate-500">
@@ -1239,7 +1632,7 @@ export default function InwardsPage({
                         </span>
                       </div>
                     </div>
-                    <div className="w-1/2 flex flex-col font-bold text-xs p-4 font-mono justify-between bg-white">
+                    <div className="w-1/2 flex flex-col font-bold text-xs p-4 font-mono bg-white">
                       <div className="space-y-2">
                         <div className="flex justify-between items-center">
                           <span className="text-slate-500 font-bold uppercase tracking-tighter">
@@ -1249,11 +1642,33 @@ export default function InwardsPage({
                             ₹{Number(invoicePreviewData.bill.subTotal || 0).toFixed(2)}
                           </span>
                         </div>
+                        {(() => {
+                          const charges = invoicePreviewData.bill.additionalCharges;
+                          if (!charges || !Array.isArray(charges)) return null;
+                          const total = charges.reduce((acc: number, c: any) => acc + (c.amount || 0), 0);
+                          if (total <= 0) return null;
+
+                          return (
+                            <div className="space-y-1">
+                              <div className="text-[10px] text-slate-400 font-bold uppercase border-b border-slate-100 pb-1 mb-1">Detailed Charges:</div>
+                              {charges.map((c: any, i: number) => (
+                                <div key={i} className="flex justify-between items-center text-[10px]">
+                                  <span className="text-slate-500 italic">{c.label || 'Extra Charge'}:</span>
+                                  <span className="text-black font-semibold">₹{Number(c.amount || 0).toFixed(2)}</span>
+                                </div>
+                              ))}
+                              <div className="flex justify-between items-center border-t border-slate-100 mt-1 pt-1 font-black">
+                                <span className="text-slate-600 uppercase tracking-tighter">Total Add. Charges:</span>
+                                <span className="text-black">₹{total.toFixed(2)}</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
                         {(invoicePreviewData.bill.taxTotal || 0) > 0 && (
                           <>
                             <div className="flex justify-between items-center">
                               <span className="text-slate-500 font-bold uppercase tracking-tighter">
-                                SGST Total:
+                                SGST @ {Number((invoicePreviewData.bill.gst || 18) / 2).toFixed(1)}%:
                               </span>{" "}
                               <span className="text-black">
                                 ₹
@@ -1264,7 +1679,7 @@ export default function InwardsPage({
                             </div>
                             <div className="flex justify-between items-center">
                               <span className="text-slate-500 font-bold uppercase tracking-tighter">
-                                CGST Total:
+                                CGST @ {Number((invoicePreviewData.bill.gst || 18) / 2).toFixed(1)}%:
                               </span>{" "}
                               <span className="text-black">
                                 ₹
@@ -1297,40 +1712,14 @@ export default function InwardsPage({
                     </span>
                   </div>
 
-                  {/* Terms & Signature */}
-                  <div className="flex h-32">
-                    <div className="w-2/3 p-3 text-[9px] leading-relaxed border-r border-black flex flex-col justify-start text-slate-700 bg-white">
-                      <p className="font-black mb-1 text-black uppercase tracking-widest border-b border-black/10 inline-block">
-                        Terms & Conditions:
-                      </p>
-                      {companySettings?.termsAndConditions &&
-                        companySettings.termsAndConditions.length > 0 ? (
-                        companySettings.termsAndConditions.map((term, idx) => (
-                          <p key={idx}>
-                            {idx + 1}. {term}
-                          </p>
-                        ))
-                      ) : (
-                        <>
-                          <p>
-                            1. Any complaint about this tax invoice must be
-                            lodged within two working days.
-                          </p>
-                          <p>
-                            2. Payment to be made in favour of JCRM Cold Storage
-                            LLP.
-                          </p>
-                          <p>
-                            3. Interest @24% p.a. will be charged if not paid
-                            within 7 days.
-                          </p>
-                          <p>4. All goods are stored at owner's risk.</p>
-                        </>
-                      )}
+                  {/* Signature Section */}
+                  <div className="flex border-b border-black">
+                    <div className="w-1/2 p-3 text-[10px] border-r border-black flex flex-col justify-end bg-slate-50/20 italic text-slate-500">
+                      Note: This is a computer generated document and does not require a physical signature.
                     </div>
-                    <div className="w-1/3 flex flex-col justify-end items-center p-4 text-[11px] bg-slate-50/50 relative">
-                      {/* Signature Image Container - Absolute Positioning to prevent layout shifts */}
-                      <div className="absolute top-2 bottom-14 left-4 right-4 flex items-center justify-center pointer-events-none">
+                    <div className="w-1/2 flex flex-col justify-end items-center p-6 text-[11px] bg-slate-50/50 relative min-h-32">
+                      {/* Signature Image Container */}
+                      <div className="absolute top-2 bottom-12 left-4 right-4 flex items-center justify-center pointer-events-none">
                         {companySettings?.signatureUrl && (
                           <img
                             src={companySettings.signatureUrl}
@@ -1342,7 +1731,7 @@ export default function InwardsPage({
                       </div>
 
                       {/* Signature Text Section */}
-                      <div className="w-full border-t-2 border-slate-900 text-center font-black pt-2 uppercase tracking-tighter relative z-10">
+                      <div className="w-full border-t-2 border-slate-900 text-center font-black pt-2 uppercase tracking-tighter relative z-10 bg-slate-50/80">
                         {companySettings?.signatureLabel ||
                           "Authorized Signatory"}
                         <div className="text-[9px] font-bold text-slate-500 mt-1 capitalize">
@@ -1360,8 +1749,65 @@ export default function InwardsPage({
                     JURISDICTION —{" "}
                     {companySettings?.footerText ||
                       "THIS IS A COMPUTER GENERATED DOCUMENT"} — GENERATED ON: {formatDate(new Date().toISOString())}
-                  </div>
                 </div>
+              </div>
+
+                {/* Page 2: Terms & Conditions */}
+                {/* <div 
+                  className="w-[210mm] min-h-[297mm] bg-white text-black p-[20mm] shadow-md border border-slate-200 print:shadow-none print:border-none print:w-full font-sans text-sm mx-auto mt-8 print:mt-0 print:break-before-page"
+                >
+                  <div className="border border-black h-full flex flex-col p-10 bg-slate-50/10 relative">
+                    <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-8">
+                      <h2 className="text-2xl font-black uppercase tracking-widest text-slate-900">Terms & Conditions</h2>
+                      <div className="text-right">
+                         <p className="text-xs font-bold text-slate-500 uppercase">Document Reference</p>
+                         <p className="text-sm font-black italic">#{invoicePreviewData.bill.billNumber}</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-6 text-sm leading-relaxed text-slate-800 flex-1">
+                      {companySettings?.termsAndConditions && companySettings.termsAndConditions.length > 0 ? (
+                        companySettings.termsAndConditions.map((term, idx) => (
+                          <div key={idx} className="flex gap-4 items-start bg-white p-4 rounded-lg border border-slate-100 shadow-sm">
+                            <span className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs">{idx + 1}</span>
+                            <p className="flex-1 font-medium">{term}</p>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="space-y-4">
+                          {[
+                            "Any complaint about this tax invoice must be lodged within two working days of receipt.",
+                            "All payments must be made in favour of JCRM Cold Storage LLP via Bank Transfer/Cheque/Draft.",
+                            "Overdue accounts will be charged interest at a rate of 24% per annum after 7 days of the invoice date.",
+                            "All goods are stored under the owner's risk; the company is not responsible for any natural depletion in weight or quality.",
+                            "The warehouse reserves the right to lien on the goods for unpaid storage charges and other dues.",
+                            "Disputes, if any, shall be subject to Surat Jurisdiction exclusively."
+                          ].map((text, idx) => (
+                            <div key={idx} className="flex gap-4 items-start bg-white p-4 rounded-lg border border-slate-100 shadow-sm">
+                              <span className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs">{idx + 1}</span>
+                              <p className="flex-1 font-medium">{text}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-20 flex justify-between items-end border-t border-slate-200 pt-8">
+                       <div className="text-[10px] font-bold text-slate-400 italic">
+                         Continued from Page 1 — Bill No: {invoicePreviewData.bill.billNumber}
+                       </div>
+                       <div className="text-center w-48">
+                         <div className="border-t border-black pt-2 text-[10px] font-black uppercase">
+                            Receiver's Signature
+                         </div>
+                       </div>
+                    </div>
+
+                    <div className="absolute bottom-6 w-full text-center left-0 text-[9px] font-bold text-slate-300 uppercase tracking-widest">
+                      PAGE 2 of 2
+                    </div>
+                  </div>
+                </div> */}
               </div>
             </div>
 

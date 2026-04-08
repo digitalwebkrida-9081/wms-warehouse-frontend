@@ -57,6 +57,15 @@ export interface Party {
   updatedAt?: string;
 }
 
+export interface AdditionalCharge {
+  label: string;
+  chargeType: 'quantity' | 'weight' | 'fixed';
+  unit: string; 
+  value: number;
+  rate: number;
+  amount: number;
+}
+
 export interface Inward {
   id: string;
   inwardDate: string;
@@ -68,7 +77,7 @@ export interface Inward {
   remainingQuantity?: number;
   unitWeight?: number;
   price?: number; 
-  additionalCharges?: number; // Loading, unloading, extra costs
+  additionalCharges?: AdditionalCharge[]; // Changed from number to AdditionalCharge[]
   goodsCondition?: string;
   remarks?: string;
   inwardNumber?: string;
@@ -87,6 +96,7 @@ export interface Outward {
   unitWeight?: number;
   goodsCondition?: string;
   remarks?: string;
+  additionalCharges?: AdditionalCharge[]; // Changed from number to AdditionalCharge[]
   createdAt?: string;
   updatedAt?: string;
   
@@ -115,10 +125,13 @@ export interface Bill {
   grandTotal: number;
   outwardDate?: string;
   storageMonths?: number;
+  storageDays?: number;
+  billingCycle?: 'months' | 'days';
   gst?: number;
   paymentStatus?: 'Paid' | 'Pending' | 'Unpaid';
   paymentMode?: string;
   remarks?: string;
+  additionalCharges?: AdditionalCharge[]; // Changed from number to AdditionalCharge[]
   createdAt?: string;
   updatedAt?: string;
 }
@@ -137,8 +150,8 @@ export interface Expense {
 }
 
 const initialData: Inward[] = [
-  { id: '1', inwardDate: '2025-08-01', totalWeight: 5000, remainingWeight: 5000, partyId: 'MORADIYA FRESH FOODS', productId: 'KESAR RAS GREEN DORI', goodsCondition: 'Good' },
-  { id: '2', inwardDate: '2025-08-02', totalWeight: 3000, remainingWeight: 1000, partyId: 'ABC FARMS', productId: 'ALPHONSO MANGO', goodsCondition: 'Fair' },
+  { id: '1', inwardDate: '2025-08-01', totalWeight: 5000, remainingWeight: 5000, partyId: 'MORADIYA FRESH FOODS', productId: 'KESAR RAS GREEN DORI', goodsCondition: 'Good', additionalCharges: [] },
+  { id: '2', inwardDate: '2025-08-02', totalWeight: 3000, remainingWeight: 1000, partyId: 'ABC FARMS', productId: 'ALPHONSO MANGO', goodsCondition: 'Fair', additionalCharges: [] },
 ];
 
 declare global {
@@ -179,11 +192,15 @@ export interface Quotation {
   grandTotal: number;
   outwardDate?: string;
   storageMonths?: number;
+  storageDays?: number;
+  billingCycle?: 'months' | 'days';
   gst?: number;
   status?: 'Approved' | 'Pending' | 'Rejected';
   paymentMode?: string;
   validUntil?: string;
   remarks?: string;
+  additionalCharges?: AdditionalCharge[]; // Changed from number to AdditionalCharge[]
   createdAt?: string;
   updatedAt?: string;
 }
+
