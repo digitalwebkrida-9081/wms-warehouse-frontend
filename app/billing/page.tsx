@@ -2451,7 +2451,7 @@ export default function BillingPage() {
           <div className="flex flex-col max-h-[95vh] w-full max-w-5xl bg-slate-100 rounded-lg shadow-2xl relative print:h-auto print:max-h-none print:shadow-none print:bg-white">
             {/* Modal Header controls (Hidden on Print) */}
             <div className="flex justify-between items-center p-4 bg-white border-b print:hidden rounded-t-lg">
-              <h2 className="text-xl font-bold flex items-center gap-2">
+              <h2 className="text-xl font-bold flex items-center gap-2 text-black">
                 <FileText className="text-indigo-600" />
                 Invoice Preview
               </h2>
@@ -2819,7 +2819,7 @@ export default function BillingPage() {
                                     <>
                                       <div className="flex justify-between items-center">
                                         <span className="text-slate-500 font-bold uppercase tracking-tighter">
-                                          SGST @ {Number((invoicePreviewData.bill.gst || 18) / 2).toFixed(1)}%:
+                                          SGST @ {Number((invoicePreviewData.bill.taxTotal > 0 ? (invoicePreviewData.bill.taxTotal * 100 / (invoicePreviewData.bill.subTotal || 1)) : (invoicePreviewData.bill.gst ?? invoicePreviewData.bill.gstRate ?? 18)) / 2).toFixed(1)}%:
                                         </span>{" "}
                                         <span className="text-black">
                                           ₹
@@ -2831,7 +2831,7 @@ export default function BillingPage() {
                                       </div>
                                       <div className="flex justify-between items-center">
                                         <span className="text-slate-500 font-bold uppercase tracking-tighter">
-                                          CGST @ {Number((invoicePreviewData.bill.gst || 18) / 2).toFixed(1)}%:
+                                          CGST @ {Number((invoicePreviewData.bill.taxTotal > 0 ? (invoicePreviewData.bill.taxTotal * 100 / (invoicePreviewData.bill.subTotal || 1)) : (invoicePreviewData.bill.gst ?? invoicePreviewData.bill.gstRate ?? 18)) / 2).toFixed(1)}%:
                                         </span>{" "}
                                         <span className="text-black">
                                           ₹
